@@ -1,5 +1,5 @@
 {
-  "description": "SHA-256 checksums of frozen evaluation outputs that the pipelines did not record themselves (docs/decisions.md, D19). Loaders refuse a listed file that does not match. Never regenerate these values from the current files.",
+  "description": "SHA-256 checksums of frozen evaluation outputs and the RAG validation questions that the pipelines did not record themselves (docs/decisions.md, D19, D22). Loaders refuse a listed file that does not match. Never regenerate these values from the current files.",
   "provenance": [
     {
       "stage": "market-stress final stage (scripts/train_market_stress.py --stage final)",
@@ -47,6 +47,14 @@
         "data/reports/taiwan_bankruptcy/baselines/test_metrics.json",
         "data/reports/taiwan_bankruptcy/baselines/test_predictions.csv"
       ]
+    },
+    {
+      "stage": "RAG validation question set (D16; used once, never for tuning)",
+      "hashes_recorded": "2026-10-24T19:55:49 (local), before the set was first used",
+      "committed": "66d8040, 2026-10-24T20:31:57+02:00; the committed blob hashes to the same value and the file has not changed since",
+      "files": [
+        "knowledge_base/eval/validation_questions.json"
+      ]
     }
   ],
   "files": {
@@ -75,6 +83,7 @@
     "data/reports/taiwan_bankruptcy/baselines/permutation_importance.csv": "fd3fa5bd5760feb46badf76003958f2c264ae68fe0fe281e7a9a05a52aaec453",
     "data/reports/taiwan_bankruptcy/baselines/selection.json": "a3d3c0fcc83aad7664bfc67fde385e8b08327596d14b02f9f876d608add36a55",
     "data/reports/taiwan_bankruptcy/baselines/test_metrics.json": "d72c56423b8bfad47a5842d300b12d2d3531fb6ec36d9cc283f36a82efc3814a",
-    "data/reports/taiwan_bankruptcy/baselines/test_predictions.csv": "6844365e1c6e320707481af6eec453e23fe6919888dc3b9a42ca51d2ad6e240d"
+    "data/reports/taiwan_bankruptcy/baselines/test_predictions.csv": "6844365e1c6e320707481af6eec453e23fe6919888dc3b9a42ca51d2ad6e240d",
+    "knowledge_base/eval/validation_questions.json": "7ed9c16f998b372657f1785f325924f0021b2b67cd7a1186fc3f808ea37bf9ee"
   }
 }

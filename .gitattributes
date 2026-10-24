@@ -1,0 +1,4 @@
+# Checksummed text files must have the same bytes in every checkout (docs/decisions.md, D22):
+# without this, Git on Windows (core.autocrlf=true) checks them out with CRLF line endings.
+knowledge_base/eval/*.json text eol=lf
+config/frozen_artifacts.json text eol=lf

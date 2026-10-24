@@ -879,3 +879,35 @@ if the decision changes.
   server): every page renders with its notices and limitations, missing and
   altered artifacts are reported, and the RAG and workflow pages give the
   same answers as the pipeline and the CLI.
+
+---
+
+## D22. Integrity verification of all frozen inputs and outputs (Phase H, step 1)
+
+- **Date:** 2026-10-25
+- **Problem:** the integrity checks run after each step used hash files kept
+  outside the repository. The raw market snapshot, the Taiwan raw and
+  processed data, and the RAG validation questions had no committed check.
+- **Decision:** `src/fincrisis/qa/integrity.py`, run by
+  `scripts/verify_integrity.py` (exit code 1 on any failure), checks files
+  only against checksums recorded independently of them:
+  - every entry of `config/frozen_artifacts.json` (D19);
+  - the raw S&P 500 and VIX files against `raw_sha256` in the frozen
+    `selection.json`, which the manifest covers, and against the snapshot's
+    own metadata. The first catches an edit even if the metadata is edited
+    to match;
+  - the Taiwan raw `data.csv` and processed `data.csv`, `column_map.csv`
+    and `split.csv` against the `input` checksums in the frozen
+    company-distress `test_metrics.json`, which the manifest covers;
+  - the RAG index against its manifest, the configured model and settings,
+    and the current documents.
+- **RAG validation questions:** added to the manifest. The checksum
+  (`7ed9c16f...`) was recorded at 19:55:49 on 2026-10-24, before the set was
+  first used. The file was committed once, in `66d8040`, and that commit's
+  blob has the same checksum; a test checks this against Git history.
+- **Line endings:** Git on Windows (`core.autocrlf=true`) checked the file out
+  with CRLF line endings in a fresh clone, which changes its checksum.
+  `.gitattributes` now fixes LF endings for `knowledge_base/eval/*.json` and
+  the manifest, so every checkout has the recorded bytes.
+- **Tests:** `tests/test_integrity.py` alters, removes or corrupts each kind
+  of file on temporary copies and checks that the verifier reports it.

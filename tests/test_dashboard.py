@@ -239,12 +239,16 @@ class TestFrozenManifest(unittest.TestCase):
     def test_manifest_lists_only_frozen_outputs_with_recorded_provenance(self):
         manifest = json.loads(ld.FROZEN_MANIFEST.read_text(encoding="utf-8"))
         allowed = tuple(d.as_posix() + "/" for k, d in DIRS.items() if k != "snapshot") + (
-            (Path(PATHS["data_reports"]) / "market_stress" / "dataset_report.md").as_posix(),)
+            (Path(PATHS["data_reports"]) / "market_stress" / "dataset_report.md").as_posix(),
+            "knowledge_base/eval/validation_questions.json")
         self.assertTrue(all(path.startswith(allowed) for path in manifest["files"]), manifest["files"])
         listed = {f for group in manifest["provenance"] for f in group["files"]}
         self.assertEqual(listed, set(manifest["files"]))
         for group in manifest["provenance"]:
-            self.assertLess(group["outputs_written"], group["hashes_recorded"])
+            if "outputs_written" in group:  # outputs hashed right after their stage ran
+                self.assertLess(group["outputs_written"], group["hashes_recorded"])
+            else:  # a committed file: its provenance is the commit (D22)
+                self.assertIn("committed", group)
 
     @unittest.skipUnless(PRESENT, "frozen market/distress outputs not present")
     def test_project_outputs_match_the_manifest(self):

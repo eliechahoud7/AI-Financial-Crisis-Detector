@@ -246,5 +246,156 @@ if the decision changes.
   - VIX open, high, low and close are identical on 508 rows up to 1997-11-26,
     so only the VIX close is reliable for that period.
 - **VIX lag (for Phase B):** VIX features must use information from before
-  day *t*. Phase B must define this precisely, given the VIX-only holiday
-  rows.
+  day *t*. The exact rule is D11.
+
+---
+
+## D11. VIX alignment rule: previous S&P 500 trading day (Milestone 5, Phase B)
+
+- **Date:** 2026-10-24
+- **Type:** feature timing and leakage prevention. It does not change the
+  Phase A raw snapshots in `data/raw/market/`.
+- **Rule:** for every S&P 500 trading date *t*, the VIX feature value is the
+  VIX close from the immediately preceding date in the **S&P 500 trading
+  calendar**, not the previous row of the VIX dataset.
+- **Procedure:**
+  1. Align VIX to the S&P 500 calendar: keep VIX closes only on S&P 500
+     trading dates, so a VIX row on a date when the S&P 500 is closed (for
+     example 2026-05-25 and 2026-09-07 in the 2026-10-24 snapshot) is
+     ignored.
+  2. Then shift by one S&P 500 session: the value for date *t* is the aligned
+     VIX close on the S&P 500 trading date immediately before *t*.
+- **Missing values:** if VIX has no close on the required previous S&P 500
+  session, the feature stays missing (NaN) and the count is reported. It is
+  never filled from a later observation, and never from a VIX-only row such
+  as a holiday print. The first S&P 500 date in the data has no previous
+  session, so its value is missing.
+- **Why:** VIX closes after the S&P 500 (4:15 pm versus 4:00 pm ET), so using
+  the same day's VIX would assume the prediction is made after 4:15 pm.
+  Lagging by one S&P 500 session guarantees the value was known before the
+  close on *t*. Tying the lag to the S&P 500 calendar keeps a VIX-only
+  holiday row from shifting the lag, so the meaning of "one session earlier"
+  stays consistent.
+- **Testing (Phase B):** tests must cover a VIX-only date, a missing
+  previous-session VIX value, and that no feature for *t* uses a VIX close
+  dated *t* or later.
+
+---
+
+## D12. Market-stress dataset, features, and splits (Milestone 5, Phase B)
+
+- **Date:** 2026-10-24
+- **Decision:** `scripts/build_market_dataset.py` reads the frozen snapshot
+  (D10), verifies its checksums before and after, and writes
+  `data/processed/market_stress/dataset.csv` and `metadata.json`, plus
+  `data/reports/market_stress/dataset_report.md`. No model is trained and
+  nothing is fitted.
+- **Target:** implemented exactly as D2
+  (`src/fincrisis/features/market_target.py`), with a 1e-12 tolerance so a
+  decline of exactly 5% counts. The last 20 rows have no complete future
+  window and are dropped, never labelled 0. Missing or non-positive prices
+  stop the build; nothing is interpolated.
+- **Features** (`src/fincrisis/features/market_features.py`):
+  - **Timing:** S&P 500 features use closes up to and including *t*; VIX
+    features follow D11.
+  - **Notation:** r = daily log return; volatility = sample standard deviation
+    (ddof=1) × √252.
+  - **Warm-up:** every rolling window needs a full window of values;
+    otherwise the feature is NaN.
+  - **Definitions** (choices not fixed by the original plan are marked
+    *chosen*):
+    - `ret_1`, `ret_5`, `ret_20`: ln(C_t / C_{t−k}).
+    - `rv_5`: volatility of the last 5 returns.
+    - `rv_ratio_20_60`: rv_20 / rv_60.
+    - `downside_vol_20`: √(mean of min(r, 0)² over 20 returns) × √252
+      (*chosen*: semideviation around zero).
+    - `drawdown_252`: C_t / max(last 252 closes) − 1.
+    - `max_drawdown_20`, `max_drawdown_60`: worst peak-to-trough decline
+      within the last 20 / 60 closes.
+    - `dist_ma_50`: C_t / SMA50_t − 1.
+    - `ma_50_slope`: SMA50_t / SMA50_{t−5} − 1 (*chosen*: 5-session relative
+      change).
+    - `vix_lag1`: previous-session VIX close (D11).
+    - `vix_change_5`, `vix_change_20`: log change of `vix_lag1` over 5 / 20
+      S&P 500 sessions (*chosen*: log change).
+    - `vix_pct_252`: share of the last 252 `vix_lag1` values, including the
+      current one, that are ≤ the current value (*chosen*: inclusive empirical
+      percentile, historical values only).
+    - `vix_rv_ratio`: `vix_lag1` / (100 × rv_20 of the previous session)
+      (*chosen*: realized volatility lagged to match the VIX timing).
+  - **VIX columns:** only VIX closes are used. VIX open, high and low are not
+    reliable before 1997 (D10).
+- **Rows:** rows with any missing feature, from the warm-up, stay in the
+  dataset with `eligible = False` and a list of their missing features. They
+  are not silently dropped.
+- **Splits** (`src/fincrisis/evaluation/splits.py`; config
+  `market_stress.*`): walk-forward with one validation block per calendar
+  year from 2000 to 2014, and expanding training windows.
+  - **Purge before each validation year:** training rows end 20 sessions
+    (`evaluation.purge_gap_trading_days`) before the year's first session.
+  - **Purge before the test period:** every development row (training or
+    validation) ends 20 sessions before the first test session, 2015-01-02.
+    So the last 20 sessions of 2014 are removed from validation, and no
+    development label uses test-period prices.
+  - **Held-out test:** every eligible row from 2015-01-01 to the last labelled
+    row.
+  - **No random splitting.** Phase C reuses the same function.
+
+---
+
+## D13. Market-stress models and evaluation rules (Milestone 5, Phase C)
+
+- **Date:** 2026-10-24. Recorded **before** any model was run.
+- **Two stages** (`scripts/train_market_stress.py`), as in D9:
+  - `--stage cv` receives development rows only (positions before the first
+    test session minus the purge). It runs the 15 walk-forward folds of D12
+    and freezes thresholds in `selection.json`.
+  - `--stage final` runs once, after review: it fits on all development rows
+    and evaluates the 2015+ test set. Every model is reported; no winner is
+    chosen on test results.
+- **Model inputs:** exactly the 16 columns in `market_features.FEATURES`.
+  `date`, `position`, `target`, `eligible` and `missing_features` are never
+  inputs. Only eligible rows are used.
+- **Models** (fixed settings in `config/settings.yaml`, no tuning):
+  - `dummy`: training prevalence.
+  - Rule baselines `rule_vix_pct_252` and `rule_downside_vol_20`: the raw
+    feature value is the score. Nothing is fitted, so they cannot leak.
+  - `logistic_regression`: StandardScaler, then L2 logistic regression.
+  - `xgboost`: gradient-boosted trees.
+- **No class weighting.** The prevalence is moderate (about 23%), and
+  unweighted models keep their probabilities interpretable for the Brier
+  score and calibration. This differs from D9, where the minority class was
+  3%.
+- **Primary metric:** average precision on the **pooled** walk-forward
+  validation predictions. All 15 years are concatenated, and each validation
+  row is predicted once by the model trained on its fold.
+  - **Caveat:** the pooled predictions come from 15 models trained on
+    different windows, so their score levels can differ between years.
+  - **Secondary:** pooled ROC-AUC, plus Brier score, log-loss and calibration
+    for probability models. Rules give scores, not probabilities, so their
+    Brier score and log-loss are not reported.
+- **Per-year metrics:**
+  - Each year's average precision and ROC-AUC are reported, but are not used
+    to select anything.
+  - **2005 (no label-1 rows):** average precision and ROC-AUC are **not
+    defined**. They are reported as `null` and excluded from any per-year
+    average. They are not reported as 0.
+  - **Years with fewer than 10 label-1 rows** (2013 has 2) are reported but
+    flagged as unreliable.
+  - The mean of the defined per-year average precisions is a secondary
+    summary.
+- **Thresholds:** the max-F1 threshold on pooled validation predictions,
+  frozen before the test stage. The test set is scored at that threshold
+  only, and is never used to tune it.
+- **Uncertainty:** labels overlap (20-session windows) and label-1 rows
+  cluster in about 95 episodes, so rows are not independent.
+  - **Method:** a circular block bootstrap over the time-ordered sequence of
+    predictions. Block length 60 sessions (three times the horizon), 2,000
+    resamples, seed 42. Resamples without both classes are skipped and
+    counted.
+  - **Comparisons:** paired differences use the same resamples.
+  - **Sensitivity:** 20- and 120-session blocks are reported for the
+    primary metric.
+- **Artifacts:** reports in `data/reports/market_stress/models/`, models in
+  `artifacts/models/market_stress/`. Both are ignored by Git and separate
+  from the company-distress component.

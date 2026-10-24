@@ -115,6 +115,30 @@ def compare_calendars(a: pd.DataFrame, b: pd.DataFrame, name_a: str, name_b: str
     }
 
 
+def load_market_dataset(directory) -> tuple[pd.DataFrame, dict]:
+    """Read the Phase B dataset after verifying its checksum against metadata.json."""
+    import hashlib
+    import json
+    from pathlib import Path
+    directory = Path(directory)
+    try:
+        meta = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
+        expected = meta["output"]["dataset.csv"]
+    except (OSError, ValueError, KeyError) as error:
+        raise MarketDataError(f"Cannot read dataset metadata in {directory}: {error}") from error
+    actual = hashlib.sha256((directory / "dataset.csv").read_bytes()).hexdigest()
+    if actual != expected:
+        raise MarketDataError(f"dataset.csv checksum mismatch: {actual} != {expected}")
+    frame = pd.read_csv(directory / "dataset.csv", index_col="date", parse_dates=["date"], float_precision="round_trip")
+    if frame.index.has_duplicates or not frame.index.is_monotonic_increasing:
+        raise MarketDataError("dataset dates must be unique and sorted")
+    if not np.array_equal(frame["position"].to_numpy(), np.arange(len(frame))):
+        raise MarketDataError("dataset positions must run 0..n-1")
+    if frame["eligible"].dtype != bool or not set(frame["target"].unique()) <= {0, 1}:
+        raise MarketDataError("dataset eligible/target columns are malformed")
+    return frame, meta
+
+
 def to_csv_text(frame: pd.DataFrame) -> str:
     """CSV with ISO dates; floats written so they parse back exactly."""
     out = frame.copy()

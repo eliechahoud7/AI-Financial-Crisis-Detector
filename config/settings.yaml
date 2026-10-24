@@ -24,6 +24,31 @@ evaluation:
   split_method: "walk_forward"
   purge_gap_trading_days: 20        # must be >= horizon_trading_days
 
+# Market-stress dataset and splits (see docs/decisions.md, D12)
+market_stress:
+  validation_first_year: 2000       # one walk-forward validation block per calendar year
+  validation_last_year: 2014        # development data ends in 2014
+  test_start: "2015-01-01"          # held-out test: 2015 to the last labelled row
+  # Phase C models (see docs/decisions.md, D13). Fixed settings, no tuning.
+  rule_baselines: ["vix_pct_252", "downside_vol_20"]   # raw feature values used as scores
+  threshold_rule: "max_f1"          # chosen on pooled walk-forward validation predictions only
+  min_positives_reliable: 10        # per-year metrics with fewer label-1 rows are flagged
+  bootstrap_resamples: 2000
+  bootstrap_block_length: 60        # sessions; 3x the 20-session label horizon
+  bootstrap_sensitivity_blocks: [20, 120]
+  logistic_regression:
+    C: 1.0
+    max_iter: 5000
+  xgboost:
+    n_estimators: 200
+    learning_rate: 0.05
+    max_depth: 3
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 5
+    tree_method: "hist"
+    n_jobs: 4
+
 # Company distress model (see docs/decisions.md, D8)
 company_distress:
   test_size: 0.2                    # stratified hold-out share

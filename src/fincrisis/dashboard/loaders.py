@@ -109,6 +109,37 @@ def _verify_frozen(root: Path, *directories: Path) -> None:
                    f"{path} does not match its checksum in config/frozen_artifacts.json")
 
 
+def verify_frozen_outputs(root: Path, paths: dict, component: str) -> None:
+    """Check one component's frozen outputs against the manifest: "market_stress" or "distress" (D19)."""
+    directories = {
+        "market_stress": (Path(paths["data_reports"]) / "market_stress" / "models", Path(paths["models"]) / "market_stress",
+                          Path(paths["processed_data"]) / "market_stress"),
+        "distress": (Path(paths["data_reports"]) / "taiwan_bankruptcy" / "baselines",
+                     Path(paths["models"]) / "taiwan_bankruptcy"),
+    }[component]
+    with _artifact(component):
+        _verify_frozen(root, *directories)
+
+
+def with_frozen_checks(agent_tools, root: Path, paths: dict):
+    """The workflow's tools, with the manifest checked before the market and distress tools run (D19, D21).
+
+    `tools.assess_market` and `tools.distress_summary` check only the checksums the pipelines recorded; this
+    adds the manifest check the dashboard loaders make, so the workflow page reports altered outputs too.
+    A failed check raises `ArtifactError`, which the workflow reports as an error (market) or as
+    unavailable results (distress).
+    """
+    from dataclasses import replace
+
+    def checked(component, tool):
+        def run():
+            verify_frozen_outputs(root, paths, component)
+            return tool()
+        return run
+    return replace(agent_tools, assess_market=checked("market_stress", agent_tools.assess_market),
+                   distress_summary=checked("distress", agent_tools.distress_summary))
+
+
 def load_settings(root: Path = PROJECT_ROOT) -> dict:
     with _artifact("settings"):
         return yaml.safe_load((Path(root) / "config" / "settings.yaml").read_text(encoding="utf-8"))
@@ -188,18 +219,16 @@ def market_stress_results(root: Path, paths: dict) -> dict:
 
 def current_market_signal(root: Path, paths: dict, stale_after_days: int, today: date | None = None) -> dict:
     """The frozen models' scores for the latest snapshot date (the workflow's `assess_market`, D17)."""
+    verify_frozen_outputs(root, paths, "market_stress")
     with _artifact("market_stress"):
-        _verify_frozen(root, Path(paths["data_reports"]) / "market_stress" / "models",
-                       Path(paths["models"]) / "market_stress", Path(paths["processed_data"]) / "market_stress")
         return tools.assess_market(root, paths, stale_after_days, today)
 
 
 def distress_results(root: Path, paths: dict) -> dict:
     """Frozen company-distress test results, cross-validation results and saved test predictions (D9)."""
     report_dir = Path(root) / paths["data_reports"] / "taiwan_bankruptcy" / "baselines"
+    verify_frozen_outputs(root, paths, "distress")
     with _artifact("distress"):
-        _verify_frozen(root, Path(paths["data_reports"]) / "taiwan_bankruptcy" / "baselines",
-                       Path(paths["models"]) / "taiwan_bankruptcy")
         summary = tools.distress_summary(root, paths)  # verifies the saved model checksums
         test = tools.read_json(report_dir / "test_metrics.json")
         predictions = pd.read_csv(report_dir / "test_predictions.csv", float_precision="round_trip")

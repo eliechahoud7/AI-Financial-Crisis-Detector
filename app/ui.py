@@ -144,8 +144,38 @@ def chart(builder, *args, table: pd.DataFrame | None = None, key: str | None = N
     figure(charts.build_or_message(builder, *args, **kwargs), table=table, key=key, caption=caption)
 
 
+LOCAL_ADDRESSES = ("localhost", "127.0.0.1", "::1")
+
+
+def local_only_problems() -> list[str]:
+    """Why the running server is not local-only, if it is not (empty list when it is).
+
+    `.streamlit/config.toml` is read only from the working directory, so a launch from anywhere else would
+    otherwise listen on every network interface and send Streamlit's usage statistics.
+    """
+    problems = []
+    address = st.get_option("server.address")
+    if address not in LOCAL_ADDRESSES:
+        problems.append(f"the server address is {address or 'unset (all network interfaces)'}, not localhost")
+    if st.get_option("browser.gatherUsageStats"):
+        problems.append("Streamlit usage statistics are switched on")
+    return problems
+
+
+def require_local_only() -> None:
+    """Stop the page, showing how to relaunch, unless the server is local-only with usage statistics off."""
+    problems = local_only_problems()
+    if problems:
+        st.error("**The dashboard is not running in local-only mode:** " + "; ".join(problems) + ".",
+                 icon=":material/lock:")
+        st.markdown("Stop the server and launch it from the project root, so `.streamlit/config.toml` is used:")
+        st.code(r".\.venv\Scripts\python.exe -m streamlit run app\streamlit_app.py", language="powershell")
+        st.stop()
+
+
 def page_header(title: str, intro: str) -> dict | None:
     """Title, the snapshot as-of notice (a warning once it is stale) and the research-only notice."""
+    require_local_only()
     st.title(title)
     st.markdown(intro)
     snap = snapshot()
@@ -212,7 +242,7 @@ def workflow(use_llm: bool, key: tuple, root: str) -> tuple:
     from fincrisis.agents.graph import build_graph
     from fincrisis.agents.runtime import make_tools
     tools, notes = make_tools(settings(), use_llm, Path(root))
-    return build_graph(tools), notes
+    return build_graph(loaders.with_frozen_checks(tools, Path(root), paths())), notes
 
 
 def show_index_problem(status: dict) -> None:

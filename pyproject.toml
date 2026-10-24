@@ -45,9 +45,11 @@ agent = [
     "langgraph-sdk>=0.4.6,<0.4.7",
     "langgraph-prebuilt>=1.1.0,<1.1.1",
 ]
-# Local Streamlit dashboard (Phase G). starlette is pinned below the newest
-# release; streamlit 1.66.1 is the first release that accepts pillow 13.
+# Local Streamlit dashboard (Phase G). It imports the RAG and workflow code, so it
+# pulls in those extras. starlette is pinned below the newest release; streamlit
+# 1.66.1 is the first release that accepts pillow 13.
 app = [
+    "fincrisis[rag,agent]",
     "streamlit>=1.66.1,<1.67",
     "starlette>=1.7.0,<1.8",
 ]

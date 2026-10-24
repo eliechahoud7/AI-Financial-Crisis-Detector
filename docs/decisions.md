@@ -855,7 +855,16 @@ if the decision changes.
   limitations from `disclosures.py`. A missing or altered artifact shows the
   loader's error and remedy instead of the page content.
 - **Local only:** `.streamlit/config.toml` binds the server to `localhost`
-  and sets `browser.gatherUsageStats = false`. The app writes nothing.
+  and sets `browser.gatherUsageStats = false`. Streamlit reads that file only
+  from the working directory, so a launch from elsewhere would listen on all
+  interfaces with statistics on; the app therefore checks both settings at
+  startup and refuses to show anything until it is relaunched from the
+  project root. The app writes nothing.
+- **Workflow integrity:** the workflow page wraps the market and distress
+  tools with the D19 manifest check (`loaders.with_frozen_checks`), so it
+  refuses the same altered outputs as the other pages. The CLI is unchanged.
+- **Dependencies:** the `app` extra includes the `rag` and `agent` extras,
+  because the app imports both.
 - **Caching:** loader results are cached on a fingerprint (size and
   modification time) of the files they read, so a changed artifact is loaded
   and verified again. The index and embedding model, and the workflow tools,

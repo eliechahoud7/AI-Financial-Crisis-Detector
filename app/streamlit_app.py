@@ -23,6 +23,7 @@ PAGES = [
     st.Page("views/research_workflow.py", title="AI Research Workflow", icon=":material/account_tree:"),
 ]
 
+ui.require_local_only()  # before anything is shown (D21)
 navigation = st.navigation(PAGES)
 ui.sidebar()
 navigation.run()

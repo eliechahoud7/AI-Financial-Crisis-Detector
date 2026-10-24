@@ -11,6 +11,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import streamlit as st
@@ -59,6 +60,31 @@ class TestConfiguration(unittest.TestCase):
     def test_pages_are_not_in_a_pages_folder(self):
         # A `pages/` folder next to the entry point would also be listed by Streamlit's automatic navigation.
         self.assertFalse((APP / "pages").exists())
+
+    def test_local_only_problems(self):
+        """Regression (review of 8f92b8d): a launch outside the project root served on all interfaces."""
+        def options(address, stats):
+            return unittest.mock.patch.object(ui.st, "get_option", side_effect=lambda name: {
+                "server.address": address, "browser.gatherUsageStats": stats}[name])
+        for address in ui.LOCAL_ADDRESSES:
+            with options(address, False):
+                self.assertEqual(ui.local_only_problems(), [])
+        with options(None, True):  # what Streamlit uses when it does not find .streamlit/config.toml
+            problems = ui.local_only_problems()
+        self.assertEqual(len(problems), 2)
+        self.assertIn("all network interfaces", problems[0])
+        with options("0.0.0.0", False):
+            self.assertIn("0.0.0.0", ui.local_only_problems()[0])
+
+    def test_app_shows_nothing_unless_local_only(self):
+        problems = ["the server address is 0.0.0.0, not localhost"]
+        with unittest.mock.patch.object(ui, "local_only_problems", return_value=problems):
+            for script in (APP / "streamlit_app.py", APP / "views" / "market_dashboard.py"):
+                at = AppTest.from_file(str(script), default_timeout=60).run()
+                self.assertFalse(at.exception)
+                self.assertTrue(any("not running in local-only mode" in e.value for e in at.error))
+                self.assertEqual(texts(at, "title"), [])
+                self.assertEqual(len(at.get("plotly_chart")), 0)
 
 
 @unittest.skipUnless(PRESENT, "frozen market/distress outputs not present")

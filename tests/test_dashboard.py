@@ -186,6 +186,26 @@ class TestLoaders(unittest.TestCase):
         self.edit_cell(self.path("ms_reports", "test_predictions.csv"), 1, 0, "2014-12-31")
         self.assert_artifact_error(lambda: ld.market_stress_results(self.root, PATHS), "does not match its checksum")
 
+    def test_workflow_tools_check_the_manifest(self):
+        """Regression (review of 8f92b8d): the workflow page accepted an altered test_metrics.json."""
+        checked = ld.with_frozen_checks(real_tools(self.root), self.root, PATHS)
+        state = build_graph(checked).invoke({"question": "What is the current market stress level?"})
+        self.assertEqual(state["trace"][-1], "compose_answer")  # unaltered outputs pass
+        metrics = self.path("ms_reports", "test_metrics.json")
+        values = json.loads(metrics.read_text(encoding="utf-8"))
+        values["prevalence"] = 0.01  # selection_sha256 is unchanged, so the pipeline's own check passes
+        metrics.write_text(json.dumps(values), encoding="utf-8")
+        self.assertEqual(tools.assess_market(self.root, PATHS, 7, today=date(2026, 10, 25))["test_prevalence"], 0.01)
+        state = build_graph(checked).invoke({"question": "What is the current market stress level?"})
+        self.assertEqual(state["trace"], ["route_request", "assess_market", "report_error"])
+        self.assertIn("test_metrics.json does not match its checksum", state["answer"])
+
+        distress = self.path("tw_reports", "test_metrics.json")
+        distress.write_bytes(distress.read_bytes() + b"\n")
+        state = build_graph(checked).invoke({"question": "How well do the bankruptcy models perform?"})
+        self.assertIn("Company-distress results are unavailable", state["answer"])
+        self.assertNotIn("ROC-AUC", state["answer"])
+
     def test_missing_manifest_is_reported(self):
         with unittest.mock.patch.object(ld, "FROZEN_MANIFEST", self.root / "nowhere.json"):
             error = self.assert_artifact_error(lambda: ld.market_stress_results(self.root, PATHS), "nowhere.json")
@@ -318,6 +338,14 @@ class TestDisclosures(unittest.TestCase):
         self.assertEqual(dis.RESEARCH_ONLY, DISCLAIMER)
         error = ld.ArtifactError("missing x", "Restore x.")
         self.assertEqual(dis.artifact_notice(error), dis.Notice("error", "missing x Restore x."))
+
+
+class TestPackaging(unittest.TestCase):
+    def test_app_extra_installs_what_the_app_imports(self):
+        """Regression (review of 8f92b8d): `.[app]` alone lacked the RAG and workflow dependencies."""
+        import tomllib
+        extras = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]
+        self.assertIn("fincrisis[rag,agent]", extras["app"])
 
 
 class TestRuntime(unittest.TestCase):

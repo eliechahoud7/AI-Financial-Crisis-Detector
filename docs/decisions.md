@@ -209,3 +209,42 @@ if the decision changes.
   XGBoost `scale_pos_weight` = count(0) / count(1).
 - **Artifacts:** reports in `data/reports/taiwan_bankruptcy/baselines/`,
   models in `artifacts/models/taiwan_bankruptcy/` (both ignored by Git).
+
+---
+
+## D10. Market data snapshot (Milestone 5, Phase A)
+
+- **Date:** 2026-10-24
+- **Decision:** `scripts/download_market_data.py` saves unadjusted daily bars
+  for `^GSPC` and `^VIX` from Yahoo Finance (yfinance, D6) to
+  `data/raw/market/` (`gspc.csv`, `vix.csv`, `metadata.json`). It is kept
+  separate from the company-distress data.
+- **Frozen range:** from 1990-01-01 to the last completed trading date
+  present in both series, 2026-10-23. `market.end_date` in the config is set
+  to that date, so a rerun requests the same range. Yahoo can revise history,
+  so reruns are compared using the recorded SHA-256 checksums.
+- **Validation:** errors stop the download and nothing is written:
+  - empty data or missing columns;
+  - duplicate or unsorted dates;
+  - missing or non-positive closes;
+  - a first date more than 10 days after the start, or a last date more than
+    7 days before the end or after it;
+  - fewer than 95% of weekdays covered.
+
+  Warnings are recorded in `metadata.json`: gaps longer than 4 calendar days,
+  missing or non-positive values in other columns, inconsistent
+  open/high/low/close values, and calendar differences between the two
+  series. The snapshot is never replaced without `--force`.
+- **Snapshot observations (2026-10-24 download):**
+  - 9,271 S&P 500 rows and 9,273 VIX rows, from 1990-01-02 to 2026-10-23.
+  - No missing values, duplicate dates, or non-positive prices.
+  - Three gaps in both series match known US market closures: 2001-09-11 to
+    2001-09-14, 2007-01-02, and 2012-10-29 to 2012-10-30.
+  - VIX has rows on 2026-05-25 and 2026-09-07, which are US market holidays
+    with no S&P 500 row. Their cause is unverified.
+  - `^GSPC` has zero volume on 2023-05-24 (volume will not be used).
+  - VIX open, high, low and close are identical on 508 rows up to 1997-11-26,
+    so only the VIX close is reliable for that period.
+- **VIX lag (for Phase B):** VIX features must use information from before
+  day *t*. Phase B must define this precisely, given the VIX-only holiday
+  rows.

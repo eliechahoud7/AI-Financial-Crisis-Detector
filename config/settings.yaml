@@ -8,9 +8,10 @@ project:
 
 market:
   ticker: "^GSPC"          # S&P 500 index (Yahoo Finance symbol)
+  vix_ticker: "^VIX"       # CBOE Volatility Index; features will lag it by one day (D10)
   price_column: "Close"
   start_date: "1990-01-01" # VIX history also starts in 1990
-  end_date: null           # null = latest available
+  end_date: "2026-10-23"   # frozen: last completed trading date in the snapshot (D10)
 
 # Market-stress target (see docs/decisions.md, D2)
 market_stress_target:

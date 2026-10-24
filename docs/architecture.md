@@ -34,7 +34,8 @@ yfinance / UCI dataset
 | RAG | `src/fincrisis/rag/` | Document ingestion, embeddings, retrieval with citations, optional local LLM |
 | Agents | `src/fincrisis/agents/` | LangGraph workflow routing questions to the market signal, distress results, or documents (D17) |
 | Scripts | `scripts/` | Reproducible command-line pipeline steps |
-| App (later) | `app/` | Streamlit UI; loads saved artifacts, never trains |
+| Dashboard logic | `src/fincrisis/dashboard/` | Read-only, integrity-checked loaders, disclosure texts, Plotly chart builders (D18–D20) |
+| App | `app/` | Streamlit entry point (`streamlit_app.py`), five pages (`views/`) and presentation helpers (`ui.py`); reads saved artifacts, never trains (D21) |
 
 ## RAG: LangChain and custom components
 
@@ -94,7 +95,9 @@ Components, in the order they are being built:
 3. **RAG + local LLM**: done (D14–D16).
 4. **LangGraph workflow** connecting the market signal, the distress
    results, and the documents: done (D17).
-5. Streamlit dashboard (next).
+5. **Streamlit dashboard**: done (D18–D21). Launch from the project root with
+   `.\.venv\Scripts\python.exe -m streamlit run app\streamlit_app.py`; it serves on
+   `localhost` only, with usage statistics off (`.streamlit/config.toml`).
 
 Deferred, not part of the current roadmap: anomaly detection and market
 regime classification. They were planned originally but will not be built

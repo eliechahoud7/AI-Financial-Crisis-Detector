@@ -4,9 +4,11 @@ A local, offline-first system that:
 
 1. Predicts company financial distress (XGBoost).
 2. Forecasts S&P 500 market stress over the next 20 trading days (XGBoost).
-3. Detects market anomalies (Isolation Forest).
-4. Classifies market regimes (K-Means).
-5. Generates evidence-based risk-mitigation recommendations (RAG + local LLM via Ollama).
+3. Answers questions about the project with cited, evidence-based answers (RAG + local LLM via Ollama).
+4. Connects these in a LangGraph workflow and a local Streamlit dashboard.
+
+Anomaly detection and market-regime classification were planned originally and are deferred; they are
+not part of the current roadmap.
 
 Everything runs locally. No paid APIs, cloud services, Docker, or fine-tuning.
 
@@ -26,8 +28,33 @@ Everything runs locally. No paid APIs, cloud services, Docker, or fine-tuning.
   generation with grounding checks (D14–D16).
 - **Workflow**: a LangGraph workflow routes questions to the market signal, the distress
   results, or the documents (D17).
+- **Dashboard**: a local Streamlit + Plotly dashboard over all of the above (D18–D21).
 
-Anomaly detection, regime classification, and the dashboard have not started.
+## Dashboard
+
+Five pages: Market Dashboard, Market Stress Analysis, Company Distress, Financial RAG Assistant
+and AI Research Workflow. The dashboard only reads the frozen outputs: it never downloads data,
+trains or refits models, regenerates predictions, or rebuilds the document index. Every page
+shows the market snapshot's as-of date (with a warning once it is more than 7 days old), the
+research-only disclaimer and the relevant limitations. Missing or altered artifacts are reported
+with instructions instead of being shown.
+
+```powershell
+# One-time: install the dashboard, RAG and workflow dependencies (CPU-only PyTorch)
+.\.venv\Scripts\python.exe -m pip install -e ".[rag,agent,app]" --extra-index-url https://download.pytorch.org/whl/cpu
+# One-time: build the document index (needed by the RAG and workflow pages)
+.\.venv\Scripts\python.exe -B scripts\build_rag_index.py --allow-download
+
+# Launch from the project root, so .streamlit/config.toml is used
+.\.venv\Scripts\python.exe -m streamlit run app\streamlit_app.py
+```
+
+Then open http://localhost:8501. `.streamlit/config.toml` binds the server to `localhost` only and
+turns off Streamlit's usage statistics. The pages need the frozen outputs under `data/` and
+`artifacts/` (not in Git; see `docs/model_card.md`, section 12, and D10–D13). The optional
+"local model" toggles need Ollama running with `qwen2.5:3b` (non-commercial licence). After editing
+any indexed document (`README.md`, `docs/`, reports), rebuild the index with
+`scripts\build_rag_index.py --force`; the dashboard shows when it is out of date.
 
 ## Asking the workflow
 

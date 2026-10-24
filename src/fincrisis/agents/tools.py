@@ -23,30 +23,42 @@ class ToolError(Exception):
     """A required frozen output is missing or does not match its recorded checksum."""
 
 
-def _sha256(path: Path) -> str:
+def sha256_file(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def _json(path: Path) -> dict:
+def read_json(path: Path) -> dict:
     if not Path(path).exists():
         raise ToolError(f"missing {path}")
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _load_model(directory: Path, name: str) -> object:
-    meta = _json(directory / "model_metadata.json")
+def verify_raw_snapshot(raw_dir: Path) -> dict:
+    """The snapshot's metadata.json, after checking every series file against its recorded checksum (D10)."""
+    raw_meta = read_json(Path(raw_dir) / "metadata.json")
+    for series in raw_meta["series"].values():
+        path = Path(raw_dir) / series["file"]
+        if not path.exists() or sha256_file(path) != series["sha256"]:
+            raise ToolError(f"raw snapshot {series['file']} does not match its recorded checksum")
+    return raw_meta
+
+
+def read_close(path: Path) -> pd.Series:
+    """Closing prices of one snapshot series, indexed by date."""
+    frame = pd.read_csv(path, float_precision="round_trip")
+    return pd.Series(frame["Close"].to_numpy(dtype=float), index=pd.DatetimeIndex(pd.to_datetime(frame["Date"])))
+
+
+def load_verified_model(directory: Path, name: str) -> object:
+    """Load a saved model only after its file matches the checksum in model_metadata.json."""
+    meta = read_json(directory / "model_metadata.json")
     entry = meta["models"].get(name)
     if entry is None:
         raise ToolError(f"model {name} is not listed in {directory / 'model_metadata.json'}")
     path = directory / entry["file"]
-    if not path.exists() or _sha256(path) != entry["sha256"]:
+    if not path.exists() or sha256_file(path) != entry["sha256"]:
         raise ToolError(f"{path} is missing or does not match its recorded checksum; refusing to load it")
     return joblib.load(path)
-
-
-def _close(path: Path) -> pd.Series:
-    frame = pd.read_csv(path, float_precision="round_trip")
-    return pd.Series(frame["Close"].to_numpy(dtype=float), index=pd.DatetimeIndex(pd.to_datetime(frame["Date"])))
 
 
 def assess_market(root: Path, paths: dict, stale_after_days: int, today: date | None = None) -> dict:
@@ -57,17 +69,14 @@ def assess_market(root: Path, paths: dict, stale_after_days: int, today: date | 
     model_dir = root / paths["models"] / "market_stress"
     dataset_path = root / paths["processed_data"] / "market_stress" / "dataset.csv"
 
-    raw_meta = _json(raw_dir / "metadata.json")
-    for series in raw_meta["series"].values():
-        if _sha256(raw_dir / series["file"]) != series["sha256"]:
-            raise ToolError(f"raw snapshot {series['file']} does not match its recorded checksum")
+    raw_meta = verify_raw_snapshot(raw_dir)
     selection_path = report_dir / "selection.json"
-    selection, test = _json(selection_path), _json(report_dir / "test_metrics.json")
-    if test.get("selection_sha256") != _sha256(selection_path):
+    selection, test = read_json(selection_path), read_json(report_dir / "test_metrics.json")
+    if test.get("selection_sha256") != sha256_file(selection_path):
         raise ToolError("selection.json differs from the one the frozen test evaluation used")
 
-    features, _ = mf.build_features(_close(raw_dir / raw_meta["series"]["gspc"]["file"]),
-                                    _close(raw_dir / raw_meta["series"]["vix"]["file"]))
+    features, _ = mf.build_features(read_close(raw_dir / raw_meta["series"]["gspc"]["file"]),
+                                    read_close(raw_dir / raw_meta["series"]["vix"]["file"]))
     latest = features.iloc[[-1]]
     if latest.isna().any(axis=None):
         raise ToolError("latest snapshot row has missing features")
@@ -77,7 +86,7 @@ def assess_market(root: Path, paths: dict, stale_after_days: int, today: date | 
         kind = selection["models"][name]
         if kind == "rule":
             return float(latest[name.removeprefix("rule_")].iloc[0])
-        return float(_load_model(model_dir, name).predict_proba(latest[mf.FEATURES])[:, 1][0])
+        return float(load_verified_model(model_dir, name).predict_proba(latest[mf.FEATURES])[:, 1][0])
 
     def describe(name: str) -> dict:
         value, threshold = score(name), selection["thresholds_max_f1"][name]
@@ -89,8 +98,11 @@ def assess_market(root: Path, paths: dict, stale_after_days: int, today: date | 
                 "test_recall_at_threshold": m["at_max_f1_threshold"]["recall"]}
 
     primary = describe(selection["primary_model"]["name"])
+    use_history = primary["kind"] == "rule" and dataset_path.exists()
+    if use_history and sha256_file(dataset_path) != selection["dataset_sha256"]:  # selection.json is verified above
+        raise ToolError("dataset.csv differs from the dataset the frozen evaluation used")
     history = pd.read_csv(dataset_path, usecols=["date", "eligible", primary["name"].removeprefix("rule_")]) \
-        if primary["kind"] == "rule" and dataset_path.exists() else None
+        if use_history else None
     if history is not None:
         values = history.loc[history["eligible"], primary["name"].removeprefix("rule_")].to_numpy(dtype=float)
         primary["historical_percentile"] = float(np.mean(values <= primary["score"]))
@@ -136,11 +148,11 @@ def context_answer(entries: list[dict], answer_fn) -> dict:
 def distress_summary(root: Path, paths: dict) -> dict:
     """Frozen held-out results of the company-distress baselines (D9); companies are not scored here."""
     root = Path(root)
-    test = _json(root / paths["data_reports"] / "taiwan_bankruptcy" / "baselines" / "test_metrics.json")
-    meta = _json(root / paths["models"] / "taiwan_bankruptcy" / "model_metadata.json")
+    test = read_json(root / paths["data_reports"] / "taiwan_bankruptcy" / "baselines" / "test_metrics.json")
+    meta = read_json(root / paths["models"] / "taiwan_bankruptcy" / "model_metadata.json")
     model_dir = root / paths["models"] / "taiwan_bankruptcy"
     for name, entry in meta["models"].items():
-        if _sha256(model_dir / entry["file"]) != entry["sha256"]:
+        if sha256_file(model_dir / entry["file"]) != entry["sha256"]:
             raise ToolError(f"{entry['file']} does not match its recorded checksum")
     families = {}
     for family, r in test["results"].items():

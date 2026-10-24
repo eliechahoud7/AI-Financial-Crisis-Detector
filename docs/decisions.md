@@ -693,3 +693,180 @@ if the decision changes.
   whole workflow on altered copies of the frozen outputs), abstention, and
   that the tools leave files unchanged. Answer quality is that of the components it reuses
   (D9, D13 to D16).
+
+---
+
+## D18. Dashboard foundation: read-only loaders and disclosures (Phase G)
+
+- **Date:** 2026-10-24
+- **Dependencies:** `streamlit` 1.66.1 and `starlette` 1.7.0 in a new `app`
+  extra. Only nine packages were added; no installed package changed.
+  `starlette` is held below its newest release, and 1.66.1 is the first
+  Streamlit release that accepts the locked `pillow` 13.
+- **Decision:** before any page is built, `src/fincrisis/dashboard/` provides
+  the shared, read-only layer the pages will use:
+  - **`loaders.py`** returns the frozen market snapshot, its features, the
+    labelled dataset, the market-stress and company-distress results with
+    their saved predictions, the current market signal, and the RAG index
+    status. Nothing is written, refitted or downloaded. Checks:
+    - the raw snapshot and the dataset against their recorded checksums
+      (D10, D12);
+    - `selection.json` against the checksum that the test evaluation and the
+      saved models record; selection, test results and models must refer to
+      the same dataset; saved model files against `model_metadata.json`
+      (D13), without loading them;
+    - the prediction files, which have no recorded checksum, by recomputing
+      each model's recorded average precision and the row and label counts;
+    - the RAG index against its manifest (files, embedding model, heading
+      setting, stale sources), without loading the embedding model.
+
+    A missing or inconsistent artifact raises `ArtifactError` with a remedy.
+    The remedies never suggest re-running the frozen evaluations, which would
+    create new results rather than restore the frozen ones.
+  - **`disclosures.py`** builds the notices: the snapshot's as-of date and a
+    warning once it is older than `agent.stale_after_days` (the same rule as
+    the workflow), the research-only disclaimer (the workflow's own text,
+    D17), and the limitations of each component. Numbers in these texts are
+    read from the frozen results, not written into the code.
+- **Refactor:** the workflow's tool wiring (`make_tools`) moved unchanged from
+  `scripts/run_crisis_agent.py` to `src/fincrisis/agents/runtime.py`, so the
+  CLI and the dashboard share it. `agents/tools.py` now exposes its checksum
+  helpers (`sha256_file`, `read_json`, `verify_raw_snapshot`, `read_close`,
+  `load_verified_model`) for reuse. The CLI's output was compared before and
+  after the move for five questions, in text and JSON, and is identical.
+- **Not done here:** no pages and no charts.
+
+---
+
+## D19. Checksums for frozen outputs the pipelines did not record (Phase G)
+
+- **Date:** 2026-10-24
+- **Problem:** two gaps found while reviewing the dashboard loaders (D18).
+  1. The prediction files, metrics, reports and model metadata of the frozen
+     evaluations have no recorded checksum. The loaders recomputed the
+     recorded average precision and label counts, but an edit that keeps
+     those (a changed date or row id, a rescaled score) went unnoticed, and
+     `test_metrics.json` itself, which anchors `selection.json`, was not
+     checked by anything.
+  2. `assess_market` read `dataset.csv` for the historical percentile
+     without checking it.
+- **Fix for 2 (no new checksum):** `assess_market` now refuses a
+  `dataset.csv` that differs from `selection.json`'s `dataset_sha256`.
+  `selection.json` is itself checked against `test_metrics.json` before
+  that, so the value comes from the frozen evaluation. A missing dataset
+  still only omits the percentile, as before.
+- **Fix for 1:** `config/frozen_artifacts.json`, a version-controlled
+  manifest of 26 SHA-256 checksums (the market-stress and company-distress
+  reports, predictions and saved models, and the market-stress dataset).
+  The dashboard loaders check every listed file in the directories they read
+  before using it; the existing checks stay as a second layer.
+  - **Provenance:** the values were copied from hash records taken during
+    the original runs, not computed from the current files:
+
+    | Stage | Outputs written | Hashes recorded |
+    |---|---|---|
+    | Market-stress final stage | 17:30:03 | 17:30:25 |
+    | Market-stress dataset | 16:40:57 | 16:41:25 |
+    | Company-distress final stage | 16:05:23 | 16:27:05 |
+
+    (local time, 2026-10-24). Before the manifest was written, every current
+    file was compared with its record, and the manifest records these times.
+    The current files also reproduce every recorded average precision and
+    label count, and the pipelines' own checksums of `selection.json` and the
+    model files.
+  - **Trust:** the manifest is read from the code checkout, never from the
+    data directory being checked, so a copied or altered data folder cannot
+    vouch for itself. Its values must never be regenerated from the current
+    files; a legitimate new evaluation would need a new, reviewed entry.
+  - **Limit:** the records were taken minutes after each stage ran, within
+    the same session, so they cannot prove that nothing changed in those
+    minutes. The recomputed metrics are consistent with the frozen results.
+- **CLI:** unchanged except that an altered `dataset.csv` now stops the
+  market branch with an error instead of producing a percentile from it. The
+  CLI does not read the manifest.
+
+---
+
+## D20. Dashboard charts (Phase G)
+
+- **Date:** 2026-10-24
+- **Decision:** `src/fincrisis/dashboard/charts.py` builds Plotly figures
+  from what the dashboard loaders (D18, D19) return. It does not import
+  Streamlit, read files or fit anything; every number shown comes from the
+  frozen outputs passed in.
+- **Charts:**
+  - market history: S&P 500 and VIX closes; drawdown from the 252-session
+    high and 20-day downside volatility (from the snapshot's features);
+  - market-stress scores: one model's walk-forward validation and held-out
+    test scores, its frozen threshold, the days at or above it ("signal"),
+    observed label-1 periods, and optionally the latest snapshot day;
+  - market-stress performance: average precision per model with
+    block-bootstrap intervals against the base rate (test or validation),
+    per-year average precision with unreliable years hollow, calibration for
+    the probability-shaped models, precision-recall curves, and the confusion
+    matrix at the frozen threshold;
+  - company distress: average precision and ROC-AUC with bootstrap
+    intervals, confusion matrices at the frozen max-F1 threshold or 0.5,
+    precision-recall curves, cross-validation results per configuration, and
+    the grouped permutation importance of the 23 large-value columns.
+- **Conventions:** observations are neutral ink or gray shading; scores are
+  colored lines with a fixed color per model, on an axis labeled as a score
+  that is not a probability; the threshold is dashed and signals are labeled,
+  not shown by color alone; quantities of different scale get separate
+  panels, never a second y-axis. Precision-recall operating points and
+  average precision in legends are the recorded values; the curves are traced
+  from the saved predictions. The colors are the validated reference palette
+  (slots 1-4); two are below 3:1 contrast on the light surface, so charts
+  keep legends and hover text, and pages will offer table views.
+- **Not possible with the saved data:**
+  - per-feature importance: the pipeline saved only one grouped permutation
+    result (all 23 large-value columns shuffled together), and nothing for
+    the market-stress models;
+  - market-stress confusion matrices at 0.5 and calibration for the rule
+    models: their scores are not probabilities, and none were recorded;
+  - company-distress calibration tables: not computed (model card,
+    section 9);
+  - company-level scores outside the test set: not available by design (D18).
+
+---
+
+## D21. Streamlit dashboard application (Phase G)
+
+- **Date:** 2026-10-25
+- **Decision:** `app/streamlit_app.py` is the entry point, with five pages in
+  `app/views/` (not `pages/`, which Streamlit would also list on its own) and
+  presentation helpers in `app/ui.py`. All loading, checks, texts and charts
+  come from `fincrisis.dashboard` (D18-D20); answers come from the existing
+  RAG `answer()` and the LangGraph workflow wired by `agents.runtime` (D17).
+  - **Market Dashboard:** snapshot closes, drawdown and downside volatility.
+  - **Market Stress Analysis:** the latest day's frozen scores, scores over
+    time, and the validation and test evaluation.
+  - **Company Distress:** frozen test results, cross-validation and grouped
+    importance. There is no form for scoring companies.
+  - **Financial RAG Assistant:** the same `answer()` call as
+    `scripts/ask_rag.py`, with citations, warnings and the retrieved
+    passages. If the index is missing, altered or out of date, the page says
+    so, shows the rebuild command and disables questions; it never rebuilds.
+  - **AI Research Workflow:** the same graph and tools as
+    `scripts/run_crisis_agent.py`, so advice is refused and missing evidence
+    is reported in the same way.
+- **On every page:** the snapshot's as-of date (a warning once it is older
+  than `agent.stale_after_days`), the research-only disclaimer, and the
+  limitations from `disclosures.py`. A missing or altered artifact shows the
+  loader's error and remedy instead of the page content.
+- **Local only:** `.streamlit/config.toml` binds the server to `localhost`
+  and sets `browser.gatherUsageStats = false`. The app writes nothing.
+- **Caching:** loader results are cached on a fingerprint (size and
+  modification time) of the files they read, so a changed artifact is loaded
+  and verified again. The index and embedding model, and the workflow tools,
+  are cached as resources; the workflow is re-created every 10 minutes so a
+  restarted Ollama is picked up.
+- **Charts:** checked by rendering every chart and page with headless Chrome
+  in light and dark mode. Fixes from that review: legends below the plot,
+  reference lines named in the legend instead of written over the data,
+  wrapped labels, readable confusion-matrix cells, a date axis on the score
+  timeline, and dark-mode colors (`charts.themed`, the palette's dark steps).
+- **Tests:** `tests/test_app.py` runs the pages with Streamlit's AppTest (no
+  server): every page renders with its notices and limitations, missing and
+  altered artifacts are reported, and the RAG and workflow pages give the
+  same answers as the pipeline and the CLI.

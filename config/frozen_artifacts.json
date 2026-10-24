@@ -1,0 +1,80 @@
+{
+  "description": "SHA-256 checksums of frozen evaluation outputs that the pipelines did not record themselves (docs/decisions.md, D19). Loaders refuse a listed file that does not match. Never regenerate these values from the current files.",
+  "provenance": [
+    {
+      "stage": "market-stress final stage (scripts/train_market_stress.py --stage final)",
+      "outputs_written": "2026-10-24T17:30:03 (local)",
+      "hashes_recorded": "2026-10-24T17:30:25 (local)",
+      "files": [
+        "artifacts/models/market_stress/dummy.joblib",
+        "artifacts/models/market_stress/logistic_regression.joblib",
+        "artifacts/models/market_stress/model_metadata.json",
+        "artifacts/models/market_stress/xgboost.joblib",
+        "data/reports/market_stress/models/cv_metrics.json",
+        "data/reports/market_stress/models/cv_report.md",
+        "data/reports/market_stress/models/final_report.md",
+        "data/reports/market_stress/models/oof_predictions.csv",
+        "data/reports/market_stress/models/selection.json",
+        "data/reports/market_stress/models/test_metrics.json",
+        "data/reports/market_stress/models/test_predictions.csv"
+      ]
+    },
+    {
+      "stage": "market-stress dataset (scripts/build_market_dataset.py)",
+      "outputs_written": "2026-10-24T16:40:57 (local)",
+      "hashes_recorded": "2026-10-24T16:41:25 (local)",
+      "files": [
+        "data/processed/market_stress/dataset.csv",
+        "data/processed/market_stress/metadata.json",
+        "data/reports/market_stress/dataset_report.md"
+      ]
+    },
+    {
+      "stage": "company-distress final stage (scripts/train_distress_baselines.py)",
+      "outputs_written": "2026-10-24T16:05:23 (local)",
+      "hashes_recorded": "2026-10-24T16:27:05 (local)",
+      "files": [
+        "artifacts/models/taiwan_bankruptcy/dummy.joblib",
+        "artifacts/models/taiwan_bankruptcy/lr_quantile.joblib",
+        "artifacts/models/taiwan_bankruptcy/model_metadata.json",
+        "artifacts/models/taiwan_bankruptcy/xgb_large_as_missing.joblib",
+        "data/reports/taiwan_bankruptcy/baselines/cv_report.md",
+        "data/reports/taiwan_bankruptcy/baselines/cv_results.csv",
+        "data/reports/taiwan_bankruptcy/baselines/final_report.md",
+        "data/reports/taiwan_bankruptcy/baselines/oof_predictions.csv",
+        "data/reports/taiwan_bankruptcy/baselines/permutation_importance.csv",
+        "data/reports/taiwan_bankruptcy/baselines/selection.json",
+        "data/reports/taiwan_bankruptcy/baselines/test_metrics.json",
+        "data/reports/taiwan_bankruptcy/baselines/test_predictions.csv"
+      ]
+    }
+  ],
+  "files": {
+    "artifacts/models/market_stress/dummy.joblib": "2dbc4b86235f550f90eb24249d810af073bd837f20cf531ee2a7e99f072c517d",
+    "artifacts/models/market_stress/logistic_regression.joblib": "f97a7152b304c7d4a1839f8fb6f0bf7ce37ee7b26c53e05181b5ab9f1b3f02c7",
+    "artifacts/models/market_stress/model_metadata.json": "bef0b6e41e22a9c43cdc46555477f9ec00188e724471485295bda1cf46ffc9d1",
+    "artifacts/models/market_stress/xgboost.joblib": "33ccea6e397e3c9f134b148bb6f5a3f7532182d6307e872adc9068153d6fcb4e",
+    "artifacts/models/taiwan_bankruptcy/dummy.joblib": "ecb7d7e07de8cb7dde38aa58e62015dc8111a795950857f12706aca2a5a68afc",
+    "artifacts/models/taiwan_bankruptcy/lr_quantile.joblib": "37744485751beaf9cba8fd1579ec5c06b9aa52f7299a62a9e00d4c9b712641ba",
+    "artifacts/models/taiwan_bankruptcy/model_metadata.json": "666b8cb6384a0fb507cfcfc52d7b9f7c4358ad372582551ef2885b83be49f1e9",
+    "artifacts/models/taiwan_bankruptcy/xgb_large_as_missing.joblib": "7a7c477e9598f8d1dc64402375f056048e252ee28ce599d400e705fd07817939",
+    "data/processed/market_stress/dataset.csv": "0c64598e4d79469ef56182a669497cb7f7498b7708abcad49bba29491405f99a",
+    "data/processed/market_stress/metadata.json": "f5eadb6d5d6e246de2e1aaeb42d46e36f121ffb5b842be2a1021391b7cf0df17",
+    "data/reports/market_stress/dataset_report.md": "ae767d9cd5740a9954bed4a35127a626857504d434b0ee0dab8ffde124d68e84",
+    "data/reports/market_stress/models/cv_metrics.json": "9832525726db05daa48112e53d192ab222ac696217bfa8aa70a1ab8efedc2f3f",
+    "data/reports/market_stress/models/cv_report.md": "bfa37eab144945501640cea7748e0863bfe292407662f7b7913699cd9239f754",
+    "data/reports/market_stress/models/final_report.md": "80877b0776e2111483c96acbcdffb733a460f54b0a8815c0130617e4746b3dfe",
+    "data/reports/market_stress/models/oof_predictions.csv": "200b1733c44a3a83fac187d62d3a0bff385206f308d7e622d204198fcca41506",
+    "data/reports/market_stress/models/selection.json": "3859553b16f27939aa38ae139cc0e3aa6024529b0d61ccf81d63d5e57bc5668a",
+    "data/reports/market_stress/models/test_metrics.json": "8dbcd14215aba2bef2bc13dfa6d1eb928a47fcf6c5c224478202d4d667ef9b08",
+    "data/reports/market_stress/models/test_predictions.csv": "b639ea590f0302daf0bbb2ece31e88f0859c2da9d3700754a6a358409b6532ed",
+    "data/reports/taiwan_bankruptcy/baselines/cv_report.md": "8f5a7654d03cb8b5ca6e9cb8926a2289d34f98ad0d84b0154b8776d956be6b52",
+    "data/reports/taiwan_bankruptcy/baselines/cv_results.csv": "a8b19535dfe1f1d171428712fd323331a30b9e4a8cd13646d5ba1acc9e799224",
+    "data/reports/taiwan_bankruptcy/baselines/final_report.md": "430e93e3ccde3e898d6fba90c0439fa5ef2fe72f9330fec5b186104834240e5f",
+    "data/reports/taiwan_bankruptcy/baselines/oof_predictions.csv": "d71840dea9032ff738dc913aba0231f9fa848bdc5a65d06c5264329be0202338",
+    "data/reports/taiwan_bankruptcy/baselines/permutation_importance.csv": "fd3fa5bd5760feb46badf76003958f2c264ae68fe0fe281e7a9a05a52aaec453",
+    "data/reports/taiwan_bankruptcy/baselines/selection.json": "a3d3c0fcc83aad7664bfc67fde385e8b08327596d14b02f9f876d608add36a55",
+    "data/reports/taiwan_bankruptcy/baselines/test_metrics.json": "d72c56423b8bfad47a5842d300b12d2d3531fb6ec36d9cc283f36a82efc3814a",
+    "data/reports/taiwan_bankruptcy/baselines/test_predictions.csv": "6844365e1c6e320707481af6eec453e23fe6919888dc3b9a42ca51d2ad6e240d"
+  }
+}

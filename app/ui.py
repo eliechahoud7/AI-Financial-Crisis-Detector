@@ -1,0 +1,229 @@
+"""Streamlit helpers shared by the dashboard pages (docs/decisions.md, D21).
+
+Only presentation lives here: caching, notices and layout. Loading, integrity
+checks, texts and figures come from `fincrisis.dashboard` (loaders,
+disclosures, charts); RAG answers and the workflow come from `fincrisis.rag`
+and `fincrisis.agents`. Nothing here writes files, downloads data or fits
+models.
+
+Cached results are keyed on a fingerprint (path, size, modification time) of
+the files they read, so an artifact changed on disk is loaded, and therefore
+verified, again. (Streamlit does not hash arguments named with a leading
+underscore, so the fingerprint argument is called `key`.)
+"""
+
+import os
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from fincrisis.dashboard import charts, disclosures, loaders
+
+CODE_ROOT = loaders.PROJECT_ROOT
+# Where the data and artifacts are read from. Defaults to the project; tests point it elsewhere.
+# The integrity manifest is always read from the code checkout (D19).
+DATA_ROOT = Path(os.environ.get("FINCRISIS_DATA_ROOT", CODE_ROOT))
+
+
+def settings() -> dict:
+    return loaders.load_settings(CODE_ROOT)
+
+
+def paths() -> dict:
+    return settings()["paths"]
+
+
+def fingerprint(*relative_dirs: str) -> tuple:
+    """(path, size, mtime) of every file under the given directories of DATA_ROOT, plus the manifest."""
+    entries = []
+    for directory in relative_dirs:
+        base = DATA_ROOT / directory
+        if base.is_dir():
+            entries += [(str(p.relative_to(DATA_ROOT)), p.stat().st_size, p.stat().st_mtime_ns)
+                        for p in sorted(base.rglob("*")) if p.is_file()]
+    manifest = loaders.FROZEN_MANIFEST
+    if manifest.exists():
+        entries.append(("manifest", manifest.stat().st_size, manifest.stat().st_mtime_ns))
+    return tuple(entries)
+
+
+def _market_dirs() -> tuple:
+    p = paths()
+    return (f"{p['raw_data']}/market", f"{p['processed_data']}/market_stress", f"{p['data_reports']}/market_stress",
+            f"{p['models']}/market_stress")
+
+
+def _distress_dirs() -> tuple:
+    p = paths()
+    return (f"{p['data_reports']}/taiwan_bankruptcy/baselines", f"{p['models']}/taiwan_bankruptcy")
+
+
+@st.cache_data(show_spinner="Verifying the frozen market snapshot...")
+def _snapshot(key: tuple, root: str) -> dict:
+    return loaders.market_snapshot(Path(root), paths())
+
+
+@st.cache_data(show_spinner="Computing features from the snapshot...")
+def _features(key: tuple, root: str) -> pd.DataFrame:
+    return loaders.market_features(loaders.market_snapshot(Path(root), paths()))[0]
+
+
+@st.cache_data(show_spinner="Verifying the frozen market-stress results...")
+def _stress(key: tuple, root: str) -> dict:
+    return loaders.market_stress_results(Path(root), paths())
+
+
+@st.cache_data(show_spinner="Scoring the latest snapshot day with the frozen models...")
+def _signal(key: tuple, root: str, stale_after_days: int, day: str) -> dict:
+    return loaders.current_market_signal(Path(root), paths(), stale_after_days)
+
+
+@st.cache_data(show_spinner="Verifying the frozen company-distress results...")
+def _distress(key: tuple, root: str) -> dict:
+    return loaders.distress_results(Path(root), paths())
+
+
+def _attempt(fn, *args):
+    """The loader's result, or None after showing why it is unavailable and how to fix it."""
+    try:
+        return fn(*args)
+    except loaders.ArtifactError as error:
+        show_artifact_error(error)
+        return None
+
+
+def snapshot():
+    return _attempt(_snapshot, fingerprint(f"{paths()['raw_data']}/market"), str(DATA_ROOT))
+
+
+def features():
+    return _attempt(_features, fingerprint(f"{paths()['raw_data']}/market"), str(DATA_ROOT))
+
+
+def stress_results():
+    return _attempt(_stress, fingerprint(*_market_dirs()), str(DATA_ROOT))
+
+
+def current_signal():
+    stale = settings()["agent"]["stale_after_days"]
+    today = pd.Timestamp.now(tz="UTC").date().isoformat()  # new day, new staleness check
+    return _attempt(_signal, fingerprint(*_market_dirs()), str(DATA_ROOT), stale, today)
+
+
+def distress_results():
+    return _attempt(_distress, fingerprint(*_distress_dirs()), str(DATA_ROOT))
+
+
+def show_artifact_error(error: loaders.ArtifactError) -> None:
+    st.error(f"**Unavailable:** {error}", icon=":material/error:")
+    if error.remedy:
+        st.markdown(f"**How to fix:** {error.remedy}")
+
+
+def dark_mode() -> bool:
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:  # no browser context (tests)
+        return False
+
+
+def figure(fig, table: pd.DataFrame | None = None, key: str | None = None, caption: str | None = None) -> None:
+    """Show a chart in the current theme, with an optional table view of the same numbers."""
+    st.plotly_chart(charts.themed(fig, dark_mode()), theme=None, key=key, width="stretch")
+    if caption:
+        st.caption(caption)
+    if table is not None:
+        with st.expander("Table view"):
+            st.dataframe(table, hide_index=True, width="stretch")
+
+
+def chart(builder, *args, table: pd.DataFrame | None = None, key: str | None = None, caption: str | None = None,
+          **kwargs) -> None:
+    """Build a chart with `charts.build_or_message`, so missing inputs show a message instead of an error."""
+    figure(charts.build_or_message(builder, *args, **kwargs), table=table, key=key, caption=caption)
+
+
+def page_header(title: str, intro: str) -> dict | None:
+    """Title, the snapshot as-of notice (a warning once it is stale) and the research-only notice."""
+    st.title(title)
+    st.markdown(intro)
+    snap = snapshot()
+    if snap is not None:
+        notice = disclosures.snapshot_notice(snap, settings()["agent"]["stale_after_days"])
+        (st.warning if notice.level == "warning" else st.info)(notice.text, icon=":material/calendar_today:")
+    st.caption(f":material/info: {disclosures.RESEARCH_ONLY}")
+    return snap
+
+
+def limitations(lines: list[str], title: str = "Limitations") -> None:
+    st.divider()
+    st.subheader(title)
+    st.markdown("\n".join(f"- {line}" for line in lines))
+    st.caption(disclosures.RESEARCH_ONLY)
+
+
+def sidebar() -> None:
+    with st.sidebar:
+        st.markdown("**AI Financial Crisis Detector**")
+        st.caption("Local research dashboard. Read-only: it never downloads data, trains models or rebuilds indexes.")
+        try:
+            snap = _snapshot(fingerprint(f"{paths()['raw_data']}/market"), str(DATA_ROOT))
+            age = loaders.snapshot_age_days(snap["as_of"])
+            st.caption(f"Market snapshot as of **{snap['as_of']}** ({age} day{'' if age == 1 else 's'} old).")
+        except loaders.ArtifactError:
+            st.caption("Market snapshot unavailable.")
+
+
+# ----------------------------------------------------------------------------- documents and workflow
+
+def index_status() -> dict:
+    """RAG index status from its manifest (never loads the model and never rebuilds the index)."""
+    return loaders.rag_index_status(settings()["rag"], DATA_ROOT)
+
+
+def index_fingerprint() -> tuple:
+    return fingerprint(settings()["rag"]["index_dir"])
+
+
+@st.cache_resource(show_spinner="Loading the document index and the local embedding model...")
+def rag_store(key: tuple, root: str) -> tuple:
+    """(store, embeddings, retriever) exactly as `scripts/ask_rag.py` opens them."""
+    from fincrisis.rag import pipeline
+    rag = settings()["rag"]
+    store, _, embeddings = pipeline.open_store(rag, Path(root))
+    return store, embeddings, pipeline.make_retriever(store, rag)
+
+
+def ollama_generator() -> tuple:
+    """The local Ollama generator with the configured settings, or (None, reason) if it is not running."""
+    from fincrisis.rag import answer as ans
+    rag = settings()["rag"]
+    o = rag["ollama"]
+    status = ans.ollama_status(o["url"], o["model"])
+    if not status["available"]:
+        return None, status["reason"]
+    return ans.ollama_generator(o["model"], o["url"], o["timeout_seconds"], o["options"], rag["max_answer_sentences"]), None
+
+
+@st.cache_resource(show_spinner="Preparing the workflow...", ttl=600)
+def workflow(use_llm: bool, key: tuple, root: str) -> tuple:
+    """(compiled LangGraph workflow, notes list), wired by `fincrisis.agents.runtime` as in the CLI."""
+    from fincrisis.agents.graph import build_graph
+    from fincrisis.agents.runtime import make_tools
+    tools, notes = make_tools(settings(), use_llm, Path(root))
+    return build_graph(tools), notes
+
+
+def show_index_problem(status: dict) -> None:
+    st.error(f"**The document index cannot be used:** {status['problem']}.", icon=":material/error:")
+    st.markdown(f"**How to fix:** {status['remedy']} Run it from the project root:")
+    st.code(r".\.venv\Scripts\python.exe -B scripts\build_rag_index.py --force", language="powershell")
+    st.caption("The dashboard never rebuilds the index itself.")
+
+
+def show_citations(citations: list) -> None:
+    if citations:
+        st.markdown("**Sources**")
+        st.markdown("\n".join(f"- [{c['marker']}] `{c['source']}`, {c['section']}"
+                              + (f" (relevance {c['score']:.3f})" if "score" in c else "") for c in citations))

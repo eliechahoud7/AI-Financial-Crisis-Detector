@@ -1,0 +1,12 @@
+# Local-only Streamlit settings (docs/decisions.md, D21). Launch from the project root so this file is read.
+[server]
+address = "localhost"     # not reachable from other machines
+headless = true           # do not open a browser or prompt for an e-mail address
+runOnSave = false
+
+[browser]
+gatherUsageStats = false  # no usage statistics are sent
+serverAddress = "localhost"
+
+[client]
+toolbarMode = "minimal"

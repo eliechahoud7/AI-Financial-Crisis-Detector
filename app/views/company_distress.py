@@ -1,0 +1,49 @@
+"""Company Distress: frozen held-out results of the company-distress baselines (D4, D8, D9)."""
+
+import pandas as pd
+import streamlit as st
+
+import ui
+from fincrisis.dashboard import charts, disclosures
+
+ui.page_header("Company Distress",
+               "Held-out test results of the company-distress baselines trained on the UCI Taiwanese Bankruptcy "
+               "dataset. This page reports frozen results only; it does not score companies.")
+
+results = ui.distress_results()
+if results is not None:
+    st.warning(results["label_caveat"], icon=":material/help:")
+    families = results["test_metrics"]["results"]
+
+    table = pd.DataFrame([{
+        "family": charts.label(f), "configuration": r["config"], "average precision": r["average_precision"],
+        "AP 95% interval": "{:.3f} to {:.3f}".format(*r["bootstrap_95ci_at_max_f1"]["average_precision"])
+        if "bootstrap_95ci_at_max_f1" in r else "",
+        "ROC-AUC": r["roc_auc"], "Brier": r["brier"], "frozen threshold": r["at_max_f1_threshold"]["threshold"],
+        "precision at threshold": r["at_max_f1_threshold"]["precision"],
+        "recall at threshold": r["at_max_f1_threshold"]["recall"]} for f, r in families.items()])
+    ui.chart(charts.distress_model_metrics, results, table=table, key="metrics")
+
+    left, right = st.columns(2)
+    with left:
+        ui.chart(charts.distress_precision_recall, results, key="pr")
+    with right:
+        family = st.selectbox("Confusion matrix for", [f for f in families if f != "dummy"],
+                              format_func=charts.label, key="family")
+        at = st.radio("Operating point", ["max_f1", "0.5"], horizontal=True, key="operating_point",
+                      format_func=lambda v: {"max_f1": "Frozen max-F1 threshold", "0.5": "0.5"}[v])
+        ui.chart(charts.distress_confusion, results, family=family, at=at, key="confusion")
+
+    st.subheader("Cross-validation and feature groups")
+    left, right = st.columns(2)
+    with left:
+        ui.chart(charts.distress_cv_folds, results, table=results["cv_results"], key="cv")
+    with right:
+        ui.chart(charts.distress_group_importance, results, table=results["permutation_importance"], key="importance",
+                 caption="The pipeline saved only this grouped result; per-feature importance is not available.")
+
+    with st.expander("Final report (held-out test)"):
+        st.markdown(results["final_report"] or "Report not found.")
+    ui.limitations(disclosures.distress_limitations(results))
+else:
+    ui.limitations(["The frozen company-distress results could not be loaded, so nothing is shown."])

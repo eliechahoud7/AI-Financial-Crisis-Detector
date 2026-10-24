@@ -7,7 +7,6 @@ copies of those outputs to check that it stops instead of estimating.
 """
 
 import hashlib
-import importlib.util
 import json
 import shutil
 import subprocess
@@ -21,7 +20,7 @@ from pathlib import Path
 import yaml
 
 from fincrisis.agents import graph as g
-from fincrisis.agents import tools
+from fincrisis.agents import runtime, tools
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS = yaml.safe_load((PROJECT_ROOT / "config" / "settings.yaml").read_text(encoding="utf-8"))
@@ -287,13 +286,6 @@ class TestRealTools(unittest.TestCase):
         self.assertNotIn("ROC-AUC", state["answer"])
 
 
-def load_script():
-    spec = importlib.util.spec_from_file_location("run_crisis_agent", PROJECT_ROOT / "scripts" / "run_crisis_agent.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 class TestScript(unittest.TestCase):
     def test_cli_refuses_advice_without_loading_anything(self):
         out = subprocess.run([sys.executable, "-B", str(PROJECT_ROOT / "scripts" / "run_crisis_agent.py"),
@@ -308,8 +300,7 @@ INDEX_DIR = PROJECT_ROOT / SETTINGS["rag"]["index_dir"]
 @unittest.skipUnless(INDEX_DIR.exists() and all(d.exists() for d in FROZEN), "RAG index or frozen outputs not present")
 class TestRealContext(unittest.TestCase):
     def test_context_cites_only_configured_sections(self):
-        script = load_script()
-        agent_tools, _ = script.make_tools(SETTINGS, use_llm=False)
+        agent_tools, _ = runtime.make_tools(SETTINGS, use_llm=False)
         for branch, entries in SETTINGS["agent"]["context"].items():
             result = agent_tools.context_answer(branch)
             self.assertEqual(result["status"], "answered", branch)

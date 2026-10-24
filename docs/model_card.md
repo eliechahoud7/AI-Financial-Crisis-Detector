@@ -381,7 +381,7 @@ when loaded, so load only files created by this project.
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt --extra-index-url https://download.pytorch.org/whl/cpu
 .\.venv\Scripts\python.exe -m pip install -e . --no-deps
 .\.venv\Scripts\python.exe scripts\download_taiwan_bankruptcy.py
 .\.venv\Scripts\python.exe scripts\preprocess_taiwan_bankruptcy.py

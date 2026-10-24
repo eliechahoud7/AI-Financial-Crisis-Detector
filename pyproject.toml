@@ -27,6 +27,17 @@ dev = [
     "pytest>=9.1,<10",
     "jupyter>=1.1,<2",
 ]
+# Local RAG (D14). Install torch from the CPU index:
+#   pip install -e ".[rag]" --extra-index-url https://download.pytorch.org/whl/cpu
+rag = [
+    "langchain-core>=1.6,<1.7",
+    "langchain-text-splitters>=1.1,<1.2",
+    "langchain-huggingface>=1.2,<1.3",
+    "sentence-transformers>=6.1,<6.2",
+    "transformers>=5.19,<5.20",
+    "faiss-cpu>=1.15,<1.16",
+    "torch>=2.14,<2.15",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

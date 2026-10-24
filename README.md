@@ -32,7 +32,7 @@ Requires Python 3.12 (Windows `py` launcher shown).
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt --extra-index-url https://download.pytorch.org/whl/cpu
 .\.venv\Scripts\python.exe -m pip install -e . --no-deps
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
 ```
@@ -41,6 +41,28 @@ Dependency ranges are declared in `pyproject.toml`, and exact versions are in
 `requirements-lock.txt`. Tests that need the downloaded dataset are skipped
 if it is absent. For the full data and model pipeline, see
 `docs/model_card.md` (section 12).
+
+## Asking questions about the project documents (RAG)
+
+Retrieval and answering run locally on CPU (see `docs/decisions.md`, D14).
+Answers quote the retrieved passages and cite them; if nothing relevant is
+found, the reply says the evidence is insufficient.
+
+```powershell
+# One-time: install the RAG dependencies (CPU-only PyTorch)
+.\.venv\Scripts\python.exe -m pip install -e ".[rag]" --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Build the index (the first run downloads the embedding model once)
+.\.venv\Scripts\python.exe -B scripts\build_rag_index.py --allow-download
+
+# Ask a question, and evaluate retrieval quality
+.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?"
+.\.venv\Scripts\python.exe -B scripts\evaluate_rag.py
+```
+
+Add your own `.md` or `.txt` documents under `knowledge_base/documents/`,
+then rebuild with `--force`. The index refuses to load if any source has
+changed since it was built.
 
 ## Layout
 

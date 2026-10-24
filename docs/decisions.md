@@ -417,3 +417,57 @@ if the decision changes.
     - the current code is that same commit, with no uncommitted changes.
   - **Recorded in the outputs:** the final outputs record the SHA-256 of the
     `selection.json` they used.
+
+---
+
+## D14. Local RAG over project documents (Phase D)
+
+- **Date:** 2026-10-24
+- **Decision:** answer questions about the project's documents with local
+  retrieval and cited, grounded answers (`src/fincrisis/rag/`). There are no
+  paid APIs, and nothing leaves the machine except the one-time model
+  download.
+- **Corpus:** the `rag.sources` patterns cover `README.md`, `docs/*.md`, the
+  locally generated reports (`data/reports/**/*.md`), and any `.md` or `.txt`
+  files placed in `knowledge_base/documents/`. PDFs are not supported yet.
+  Markdown is split by heading first, then into chunks of up to 800
+  characters with 120 characters of overlap. Each chunk keeps its source path
+  and section for citations.
+- **Embeddings:** `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, 384
+  dimensions, CPU).
+  - **Cache only:** it is loaded only from the local Hugging Face cache.
+    Downloading it requires `--allow-download`.
+  - **Recorded:** the model revision is stored in the index manifest.
+  - **CPU-only torch** is installed.
+- **Vector store:** `FaissStore`, a small LangChain `VectorStore`
+  implementation on FAISS, with inner product over L2-normalized vectors, so
+  scores are cosine similarities. `langchain-community`'s FAISS wrapper was
+  not used for two reasons:
+  - the package reports that it is being sunset;
+  - it saves its document store with pickle.
+
+  Instead, the index is saved as `index.faiss` plus `chunks.json`, so no
+  pickle is involved. A manifest stores checksums of both files and of every
+  source document. Loading refuses an altered index, an index built with a
+  different model, and a stale index (sources changed, removed, or added).
+  Rebuilding is atomic and needs `--force`.
+- **Answers (default extractive):**
+  - The answer is up to 3 sentences copied from retrieved chunks, chosen by
+    similarity to the question, each followed by a citation [n] to the
+    retrieved chunk.
+  - If the best retrieval score is below `min_relevance` (0.30 cosine), the
+    reply is "insufficient evidence". The threshold was fixed before the
+    evaluation and not tuned on it.
+- **Optional generation:** `--llm ollama` sends the same evidence to a local
+  Ollama model (D5) with instructions to cite every claim. The answer is used
+  only if every citation refers to retrieved evidence; otherwise the
+  extractive answer is returned with a warning. Ollama is not installed by
+  this project, and generation has not been evaluated.
+- **Evaluation:** `knowledge_base/eval/retrieval_questions.json` has 26
+  answerable questions, paraphrased and tied to an expected source and
+  phrase, plus 6 unanswerable questions. Metrics are hit@1/3/5, MRR, and the
+  answer and abstention rates at the threshold. A TF-IDF retriever over the
+  same chunks is the baseline.
+- **Separation:** artifacts are kept in `artifacts/rag/` and reports in
+  `data/reports/rag/`, both ignored by Git. The market-stress and
+  company-distress components are unchanged.

@@ -51,8 +51,8 @@ yfinance / UCI dataset
 Components, in the order they are being built:
 
 1. **Company distress model** (UCI Taiwanese Bankruptcy dataset), in progress:
-   download, inspection, preprocessing, and baseline cross-validation are done;
-   the held-out test evaluation is pending.
+   download, inspection, preprocessing, baseline cross-validation, and the
+   one-time held-out test evaluation are done (see `docs/model_card.md`).
 2. Market data and market-stress prediction
 3. Anomaly detection and regime classification
 4. RAG + local LLM recommendations

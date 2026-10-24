@@ -48,9 +48,13 @@ yfinance / UCI dataset
 
 ## Milestones
 
-1. **Market data and market-stress prediction** (current)
-2. Anomaly detection and regime classification
-3. Company distress model (UCI Taiwanese Bankruptcy dataset)
+Components, in the order they are being built:
+
+1. **Company distress model** (UCI Taiwanese Bankruptcy dataset), in progress:
+   download, inspection, preprocessing, and baseline cross-validation are done;
+   the held-out test evaluation is pending.
+2. Market data and market-stress prediction
+3. Anomaly detection and regime classification
 4. RAG + local LLM recommendations
 5. Streamlit dashboard
 

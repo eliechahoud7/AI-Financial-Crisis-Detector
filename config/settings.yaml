@@ -27,6 +27,23 @@ evaluation:
 company_distress:
   test_size: 0.2                    # stratified hold-out share
   cv_folds: 5                       # stratified CV within the training set
+  # Baseline models (see docs/decisions.md, D9). Fixed settings, no tuning.
+  cv_repeats: 3
+  bootstrap_resamples: 2000
+  permutation_rounds: 5
+  large_value_threshold: 1.0        # values above this are "large" (cause unknown)
+  threshold_rule: "max_f1"          # chosen on training out-of-fold predictions only
+  logistic_regression:
+    C: 1.0
+    max_iter: 5000
+  xgboost:
+    n_estimators: 300
+    learning_rate: 0.05
+    max_depth: 4
+    subsample: 0.8
+    colsample_bytree: 0.8
+    tree_method: "hist"
+    n_jobs: 4
 
 paths:
   raw_data: "data/raw"

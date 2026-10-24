@@ -16,8 +16,15 @@ Everything runs locally. No paid APIs, cloud services, Docker, or fine-tuning.
 
 ## Status
 
-Milestone 1 (market data and market-stress prediction): project skeleton only.
-No models are implemented yet.
+Company distress model (UCI Taiwanese Bankruptcy dataset), in progress:
+
+- Download, inspection, and preprocessing: done (`scripts/download_taiwan_bankruptcy.py`,
+  `scripts/inspect_taiwan_bankruptcy.py`, `scripts/preprocess_taiwan_bankruptcy.py`).
+- Baseline models: cross-validation stage implemented (`scripts/train_distress_baselines.py`);
+  held-out test evaluation not yet run.
+- The meanings of the dataset's target labels are unverified (see `docs/decisions.md`, D4).
+
+Market-stress prediction, anomaly detection, regimes, RAG, and the dashboard have not started.
 
 ## Setup
 

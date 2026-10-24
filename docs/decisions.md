@@ -162,3 +162,50 @@ if the decision changes.
 - **Metrics:** PR-AUC (primary), ROC-AUC, precision and recall at a chosen
   threshold, Brier score, calibration, and bootstrap confidence intervals.
   Accuracy is not a headline metric.
+
+---
+
+## D9. Company distress baselines
+
+- **Date:** 2026-10-24
+- **Decision:** `scripts/train_distress_baselines.py` compares DummyClassifier
+  (prior), Logistic Regression and XGBoost with fixed settings from
+  `config/settings.yaml` (no tuning).
+- **Label caveat:** label 1 is treated as the class to detect only because it
+  is the minority class. Its meaning (and that of 0) is unverified; reports
+  must not describe results as predicting bankruptcy.
+- **Two stages:**
+  - `--stage cv` loads training rows only (5-fold x 3-repeat stratified CV,
+    seed 42), freezes one treatment and one max-F1 threshold per model family
+    in `selection.json`, and never reads test labels.
+  - `--stage final` runs only after review: it fits each frozen configuration
+    on the full training set and evaluates the test set once. All models are
+    reported; no winner is chosen on test results.
+- **Large-value treatments**, all inside pipelines and refitted per fold:
+  LR with standard scaling of the original values, LR with a quantile
+  transform, LR and XGBoost with values above 1 treated as missing, and
+  XGBoost on the original values. No indicator columns.
+- **Diagnostics only:** `lr_quantile_drop24` and `xgb_raw_drop24` remove the
+  large-value columns as an ablation. They are never selected, and a score
+  change does not show that those features are defective.
+- **Large-value column list (resolved 2026-10-24):** defined as the columns
+  with any **training-row** value above `large_value_threshold`, so no test
+  rows influence it. This gives 23 columns, not the 24 found over all rows in
+  Milestones 2 and 3: `current_ratio` has a single value above 1 (row_id
+  2499), and that row is in the test split. The feature is kept unchanged and
+  is not assumed erroneous. The list affects only the drop-24 diagnostics and
+  the grouped permutation analysis; `LargeValuesToMissing` applies the
+  threshold to every column, so that test value is still treated
+  consistently. The `_drop24` names refer to the original inspection; reports
+  state the actual count. Both lists are recorded in `selection.json`.
+  The list is computed once from all training rows (feature values only, no
+  labels), so within CV it also reflects validation-fold feature values; it
+  is a label-free column choice and does not use test rows.
+- **Selection rule (fixed before running):** per family, the first treatment
+  in preference order (LR: quantile, large-as-missing, standard; XGBoost: raw,
+  large-as-missing) whose mean fold-by-fold average-precision deficit to the
+  best treatment is at most one standard error.
+- **Class weights** come from each fit's labels: `class_weight="balanced"` and
+  XGBoost `scale_pos_weight` = count(0) / count(1).
+- **Artifacts:** reports in `data/reports/taiwan_bankruptcy/baselines/`,
+  models in `artifacts/models/taiwan_bankruptcy/` (both ignored by Git).

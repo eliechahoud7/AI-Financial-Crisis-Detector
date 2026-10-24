@@ -7,7 +7,9 @@ stratified train/test split. Nothing is fitted to the data
 """
 
 import csv
+import hashlib
 import io
+import json
 import re
 from pathlib import Path
 
@@ -142,6 +144,38 @@ def make_split(processed: pd.DataFrame, test_size: float, seed: int) -> pd.DataF
         pd.DataFrame({ROW_ID: test_ids, "split": "test"}),
     ])
     return split.sort_values(ROW_ID).reset_index(drop=True)
+
+
+def processed_checksums(directory: Path) -> dict[str, str]:
+    """SHA-256 of the processed files listed in metadata.json, verified against it."""
+    directory = Path(directory)
+    recorded = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))["output"]["sha256"]
+    actual = {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in recorded}
+    mismatched = [name for name in recorded if actual[name] != recorded[name]]
+    if mismatched:
+        raise ValidationError(f"Processed file(s) do not match metadata.json: {mismatched}")
+    return actual
+
+
+def load_processed(directory: Path, subset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Return (features, target, row_id) for the saved 'train' or 'test' split.
+
+    Checksums are verified first. Only rows of the requested subset are returned,
+    so code that asks for 'train' never receives test rows.
+    """
+    if subset not in ("train", "test"):
+        raise ValueError(f"subset must be 'train' or 'test', not {subset!r}")
+    directory = Path(directory)
+    processed_checksums(directory)
+    data = pd.read_csv(directory / "data.csv", float_precision="round_trip")
+    split = pd.read_csv(directory / "split.csv")
+    if not data[ROW_ID].equals(split[ROW_ID]):
+        raise ValidationError("data.csv and split.csv row_ids do not match")
+    if not set(split["split"]) <= {"train", "test"}:
+        raise ValidationError(f"Unexpected split labels: {sorted(set(split['split']))}")
+    rows = data[split["split"].to_numpy() == subset]
+    features = rows.drop(columns=[ROW_ID, TARGET]).set_index(rows[ROW_ID])
+    return features, rows[TARGET].set_axis(rows[ROW_ID]), rows[ROW_ID].reset_index(drop=True)
 
 
 def to_csv_text(df: pd.DataFrame) -> str:

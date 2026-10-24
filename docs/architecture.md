@@ -8,18 +8,18 @@ yfinance / UCI dataset
         ▼
  data/raw ──► data loading + validation ──► feature engineering ──► data/processed
                                                      │
-              ┌──────────────────┬──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼                  ▼
-     Market-stress model   Anomaly detector   Regime classifier   Distress model
-        (XGBoost)         (Isolation Forest)      (K-Means)          (XGBoost)
-              └──────────────────┴────────┬─────────┴──────────────────┘
-                                          ▼
-                              model outputs + metrics
-                                          │
-     knowledge_base/ ──► FAISS index ──► LangGraph workflow ──► Ollama (local LLM)
-                                          │
-                                          ▼
-                                 Streamlit dashboard
+                                  ┌──────────────────┴──────────────────┐
+                                  ▼                                     ▼
+                         Market-stress model                    Distress model
+                  (rule baseline, LogReg, XGBoost)            (LogReg, XGBoost)
+                                  └──────────────────┬──────────────────┘
+                                                     ▼
+                                         model outputs + metrics
+                                                     │
+     knowledge_base/ + docs ──► FAISS index ──► LangGraph workflow ──► Ollama (local LLM)
+                                                     │
+                                                     ▼
+                                            Streamlit dashboard
 ```
 
 ## Components
@@ -29,12 +29,49 @@ yfinance / UCI dataset
 | Configuration | `config/settings.yaml` | Single source for tickers, target parameters, seeds, paths |
 | Data loading | `src/fincrisis/data/` | Download, cache, and validate raw data |
 | Features | `src/fincrisis/features/` | Backward-looking features only (data up to day *t*) |
-| Models | `src/fincrisis/models/` | Training and prediction for the four models |
+| Models | `src/fincrisis/models/` | Training and prediction for the market-stress and company-distress models |
 | Evaluation | `src/fincrisis/evaluation/` | Chronological splits, metrics, baselines |
 | RAG | `src/fincrisis/rag/` | Document ingestion, embeddings, retrieval with citations, optional local LLM |
 | Agents | `src/fincrisis/agents/` | LangGraph workflow routing questions to the market signal, distress results, or documents (D17) |
 | Scripts | `scripts/` | Reproducible command-line pipeline steps |
 | App (later) | `app/` | Streamlit UI; loads saved artifacts, never trains |
+
+## RAG: LangChain and custom components
+
+LangChain provides the document, splitting, embedding and vector-store layers
+of the RAG. The layers that decide what an answer says are plain Python in
+`src/fincrisis/rag/`.
+
+| Part | Uses | Where |
+|---|---|---|
+| Documents with source and section metadata | LangChain (`langchain_core.documents.Document`) | `documents.py` |
+| Chunking by Markdown heading, then by size | LangChain (`MarkdownHeaderTextSplitter`, `RecursiveCharacterTextSplitter`) | `documents.py` |
+| Embeddings (all-MiniLM-L6-v2; revision recorded in the index manifest) | LangChain (`langchain_huggingface.HuggingFaceEmbeddings`) | `pipeline.py` |
+| Vector store | LangChain `VectorStore` interface, so `as_retriever()` works; custom FAISS implementation inside | `index.py` (`FaissStore`) |
+| Dense, hybrid and section-scoped retrieval | Custom Python | `retrieval.py`, `answer.py` |
+| Extractive answers, `[n]` citations, abstention | Custom Python | `answer.py` |
+| Ollama generation and grounding check | Custom Python (fixed prompt over the local HTTP API) | `answer.py` |
+| Retrieval and generation evaluation | Custom Python | `evaluation.py`, `scripts/evaluate_rag*.py` |
+
+Why the custom parts are kept:
+
+- **FAISS store** (D14): `langchain-community`'s FAISS wrapper saves its
+  document store with pickle, so loading an index could run code, and the
+  package reports that it is being sunset. `FaissStore` saves `index.faiss`
+  plus `chunks.json`. Its manifest of checksums makes loading refuse an
+  altered index, a stale one, or one built with a different embedding model.
+- **Retrieval and citations** (D14, D16, D17): answers must quote retrieved
+  passages and cite them by number, and must abstain below the fixed
+  `min_relevance`. The scores, the threshold and the dense default were
+  evaluated as implemented; reimplementing them with other abstractions would
+  change the scores that those results describe.
+- **Grounding check and prompt** (D15, D16): a generated answer is accepted
+  only if every sentence cites retrieved evidence, and its numbers and most
+  of its words occur in the cited passages. The prompt and the deterministic model
+  options are part of the recorded generation results, so they stay fixed.
+- **Evaluation safeguards** (D16): the development and validation question
+  sets, the validation-set checksum and the rule against tuning on the
+  validation set rely on this code staying the same as what was evaluated.
 
 ## Principles
 
@@ -57,7 +94,10 @@ Components, in the order they are being built:
 3. **RAG + local LLM**: done (D14–D16).
 4. **LangGraph workflow** connecting the market signal, the distress
    results, and the documents: done (D17).
-5. Anomaly detection and regime classification
-6. Streamlit dashboard
+5. Streamlit dashboard (next).
+
+Deferred, not part of the current roadmap: anomaly detection and market
+regime classification. They were planned originally but will not be built
+unless the roadmap changes.
 
 Folders for later milestones are created when their milestone starts.

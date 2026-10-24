@@ -9,9 +9,24 @@ description = "Local AI system for financial distress prediction, market-stress 
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 authors = [{ name = "Elie Chahoud", email = "eliechahoud1@users.noreply.github.com" }]
-# Runtime dependencies are added per phase, with pinned versions,
-# when they are installed (Phase A: data and models).
-dependencies = []
+# Compatible ranges here; exact versions are recorded in a lock file after install.
+# Phase A: data and models.
+dependencies = [
+    "numpy>=2.5,<3",
+    "pandas>=3.0.6,<3.1",
+    "scikit-learn>=1.9,<2",
+    "xgboost>=3.4,<4",
+    "yfinance>=1.7,<2",
+    "matplotlib>=3.11,<4",
+    "plotly>=7.1,<8",
+    "PyYAML>=6.0.3,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1,<10",
+    "jupyter>=1.1,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

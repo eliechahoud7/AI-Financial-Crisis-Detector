@@ -91,7 +91,16 @@ rag:
   eval_set: "knowledge_base/eval/retrieval_questions.json"
   eval_k: [1, 3, 5]
   reports_dir: "data/reports/rag"
-  ollama_model: "qwen2.5:3b"        # optional generator; used only with --llm ollama (D5)
+  ollama:                           # local generator, used with --llm ollama (D5, D15)
+    model: "qwen2.5:3b"             # Qwen Research License: non-commercial use only
+    url: "http://localhost:11434"
+    timeout_seconds: 600
+    min_support: 0.6                # share of an answer sentence's content words found in its cited passages
+    options:                        # deterministic decoding
+      temperature: 0
+      seed: 42
+      num_ctx: 4096
+      num_predict: 256
 
 paths:
   raw_data: "data/raw"

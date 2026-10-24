@@ -196,22 +196,64 @@ class TestAnswer(unittest.TestCase):
         self.assertEqual(result["answer"], ans.INSUFFICIENT)
         self.assertEqual(result["citations"], [])
 
-    def test_generator_citations_are_checked(self):
-        good = lambda q, ev_: f"Leverage is debt relative to equity [{ev_[0]['rank']}]."
+    def test_generated_answer_accepted_only_when_grounded(self):
+        info = {"model": "fake", "seconds": 0.1}
+        good = lambda q, ev_: (f"Leverage measures debt relative to equity [{ev_[0]['rank']}].", info)
         result = ans.answer("leverage debt equity", self.store, self.emb, 3, 0.1, 2, generator=good)
-        self.assertEqual(result["method"], "generative")
-        for bad in (lambda q, e: "Leverage is debt relative to equity.", lambda q, e: "Something [9].",
-                    lambda q, e: (_ for _ in ()).throw(ConnectionError("no server"))):
+        self.assertEqual((result["method"], result["status"]), ("generative", "answered"))
+        self.assertEqual(result["generation"]["grounding_problems"], [])
+        self.assertTrue(result["citations"])
+        bad_answers = (
+            lambda q, e: ("Leverage measures debt relative to equity.", info),               # no citation
+            lambda q, e: ("Leverage measures debt [9].", info),                                # unretrieved passage
+            lambda q, e: (f"Leverage rose 37% in 2019 [{e[0]['rank']}].", info),              # invented numbers
+            lambda q, e: (f"Quantum chromodynamics governs gluons [{e[0]['rank']}].", info),   # unsupported words
+            lambda q, e: (_ for _ in ()).throw(ConnectionError("no server")),                 # server down
+        )
+        for bad in bad_answers:
             result = ans.answer("leverage debt equity", self.store, self.emb, 3, 0.1, 2, generator=bad)
             self.assertEqual(result["method"], "extractive")
+            self.assertEqual(result["status"], "answered")
             self.assertTrue(result["warnings"])
 
-    def test_ollama_generator_uses_injected_transport(self):
+    def test_model_abstention_becomes_insufficient_evidence(self):
+        abstain = lambda q, e: (ans.INSUFFICIENT, {"model": "fake"})
+        result = ans.answer("leverage debt equity", self.store, self.emb, 3, 0.1, 2, generator=abstain)
+        self.assertEqual((result["status"], result["method"], result["citations"]), ("insufficient_evidence", "generative", []))
+        self.assertTrue(ans.is_abstention("Insufficient evidence."))
+        self.assertFalse(ans.is_abstention("Leverage is debt over equity [1]."))
+
+    def test_threshold_abstention_skips_the_model(self):
         calls = []
-        gen = ans.ollama_generator("m", post=lambda url, payload: calls.append(payload) or {"response": "ok [1]"})
-        self.assertEqual(gen("q", [{"rank": 1, "source": "s", "section": "x", "text": "t"}]), "ok [1]")
-        self.assertIn("[1] (s - x)", calls[0]["prompt"])
-        self.assertEqual(calls[0]["options"]["temperature"], 0)
+        result = ans.answer("sourdough", self.store, self.emb, 3, 0.99, 2,
+                            generator=lambda q, e: calls.append(q) or ("x [1]", {}))
+        self.assertEqual((result["status"], calls), ("insufficient_evidence", []))
+
+    def test_check_grounding_details(self):
+        evidence = {1: "Leverage is debt divided by equity, 0.4871 in 2014.", 2: "Banks hold cash buffers."}
+        self.assertEqual(ans.check_grounding("Leverage is debt divided by equity [1]. Banks hold cash buffers [2].", evidence, 0.6), [])
+        self.assertEqual(ans.check_grounding("Leverage was 0.4871 in 2014. [1]", evidence, 0.6), [])  # trailing citation attaches
+        self.assertIn("uncited", ans.check_grounding("Leverage is debt [1]. Banks hold cash.", evidence, 0.6)[0])
+        self.assertIn("numbers", ans.check_grounding("Leverage was 0.52 in 2014 [1].", evidence, 0.6)[0])
+        self.assertIn("content words", ans.check_grounding("Banks hold cash buffers [1].", evidence, 0.6)[0])
+        self.assertEqual(ans.check_grounding("", evidence, 0.6), ["empty answer"])
+
+    def test_ollama_generator_and_status_use_injected_transport(self):
+        calls = []
+        reply = {"response": " ok [1] ", "prompt_eval_count": 12, "eval_count": 3, "total_duration": 2_500_000_000}
+        gen = ans.ollama_generator("m", options={"num_ctx": 4096}, post=lambda url, payload: calls.append((url, payload)) or reply)
+        text, info = gen("q", [{"rank": 1, "source": "s", "section": "x", "text": "t"}])
+        self.assertEqual((text, info["seconds"], info["prompt_tokens"]), ("ok [1]", 2.5, 12))
+        url, payload = calls[0]
+        self.assertTrue(url.endswith("/api/generate"))
+        self.assertIn("[1] (s - x)", payload["prompt"])
+        self.assertEqual((payload["options"]["temperature"], payload["options"]["seed"], payload["options"]["num_ctx"]), (0, 42, 4096))
+        self.assertFalse(payload["stream"])
+        responses = {"http://h/api/version": {"version": "1.0"}, "http://h/api/tags": {"models": [{"name": "m"}]}}
+        self.assertTrue(ans.ollama_status("http://h", "m", get=responses.__getitem__)["available"])
+        self.assertIn("not pulled", ans.ollama_status("http://h", "other", get=responses.__getitem__)["reason"])
+        down = ans.ollama_status("http://h", "m", get=lambda u: (_ for _ in ()).throw(OSError("refused")))
+        self.assertFalse(down["available"])
 
 
 class TestEvaluation(unittest.TestCase):

@@ -60,6 +60,18 @@ found, the reply says the evidence is insufficient.
 .\.venv\Scripts\python.exe -B scripts\evaluate_rag.py
 ```
 
+Optional: let a local model write the answer (see `docs/decisions.md`, D15).
+This needs [Ollama](https://ollama.com) and the `qwen2.5:3b` model, which is
+licensed for non-commercial use only. Generated answers are used only if
+they pass the grounding checks; otherwise the cited extractive answer is
+shown.
+
+```powershell
+ollama pull qwen2.5:3b
+.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?" --llm ollama
+.\.venv\Scripts\python.exe -B scripts\evaluate_rag_generation.py
+```
+
 Add your own `.md` or `.txt` documents under `knowledge_base/documents/`,
 then rebuild with `--force`. The index refuses to load if any source has
 changed since it was built.

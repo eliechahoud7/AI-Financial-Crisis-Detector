@@ -461,8 +461,9 @@ if the decision changes.
 - **Optional generation:** `--llm ollama` sends the same evidence to a local
   Ollama model (D5) with instructions to cite every claim. The answer is used
   only if every citation refers to retrieved evidence; otherwise the
-  extractive answer is returned with a warning. Ollama is not installed by
-  this project, and generation has not been evaluated.
+  extractive answer is returned with a warning. Superseded in Phase E by
+  D15, which installs Ollama, adds stricter grounding checks, and evaluates
+  generation.
 - **Evaluation:** `knowledge_base/eval/retrieval_questions.json` has 26
   answerable questions, paraphrased and tied to an expected source and
   phrase, plus 6 unanswerable questions. Metrics are hit@1/3/5, MRR, and the
@@ -471,3 +472,40 @@ if the decision changes.
 - **Separation:** artifacts are kept in `artifacts/rag/` and reports in
   `data/reports/rag/`, both ignored by Git. The market-stress and
   company-distress components are unchanged.
+
+---
+
+## D15. Local LLM answers through Ollama (Phase E)
+
+- **Date:** 2026-10-24
+- **Runtime:** Ollama 0.40.10, installed per user with winget (MIT
+  license). It listens on `127.0.0.1:11434` only and starts with Windows.
+- **Model:** `qwen2.5:3b` (Q4_K_M, about 1.9 GB, ID `357c53fb659c`), as
+  chosen in D5.
+  - **License:** the Qwen Research License, verified on the Ollama and
+    Hugging Face pages on 2026-10-24. Non-commercial use only; distributing
+    derived models would require a "Built with Qwen" notice.
+  - **Hardware:** about 6.5 output tokens/s on this machine (i7-1165G7,
+    16 GB RAM, partly offloaded to the 2 GB MX450).
+- **Use:** generation is optional (`ask_rag.py --llm ollama`). Extractive
+  answers remain the default. Settings are in `rag.ollama`, with
+  deterministic decoding (temperature 0, seed 42, `num_ctx` 4096,
+  `num_predict` 256).
+- **Safeguards:**
+  - **Before generating:** the server and the model are checked; if either
+    is unavailable, the extractive answer is returned with a warning.
+  - **Below the retrieval threshold:** the model is never called.
+  - **Model refusal:** if the model replies that the evidence is
+    insufficient, the result is "insufficient evidence".
+  - **Grounding check (`check_grounding`):** a generated answer is accepted
+    only if every sentence cites a retrieved passage, every number appears
+    in the cited passages, and at least `min_support` (0.6) of its content
+    words do. Otherwise the extractive answer is returned with a warning.
+    This is a lexical check, not proof of correctness.
+- **Prompt:** one revision was made before the formal evaluation and not
+  tuned afterwards. It added a citation-format example on a generic topic
+  outside the evaluation set, and moved the rules after the evidence.
+- **Evaluation:** `scripts/evaluate_rag_generation.py` runs the 32-question
+  set and reports accepted, rejected and refused shares, whether accepted
+  answers cite an expected relevant passage, and latency. It lists accepted
+  answers for manual review.

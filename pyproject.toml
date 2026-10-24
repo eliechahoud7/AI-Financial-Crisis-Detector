@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fincrisis"
+version = "0.1.0"
+description = "Local AI system for financial distress prediction, market-stress forecasting, anomaly detection, regime classification, and RAG-based risk recommendations."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "Elie Chahoud", email = "eliechahoud1@users.noreply.github.com" }]
+# Runtime dependencies are added per phase, with pinned versions,
+# when they are installed (Phase A: data and models).
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

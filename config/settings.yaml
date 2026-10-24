@@ -1,0 +1,31 @@
+# Central configuration. Paths are relative to the project root.
+# Changing a target parameter changes the problem being solved: record the
+# reason in docs/decisions.md.
+
+project:
+  name: ai-financial-crisis-detector
+  random_seed: 42
+
+market:
+  ticker: "^GSPC"          # S&P 500 index (Yahoo Finance symbol)
+  price_column: "Close"
+  start_date: "1990-01-01" # VIX history also starts in 1990
+  end_date: null           # null = latest available
+
+# Market-stress target (see docs/decisions.md, D2)
+market_stress_target:
+  horizon_trading_days: 20
+  drawdown_threshold: 0.05          # 5% decline
+  peak_definition: "forward_running_max"
+
+# Chronological evaluation (see docs/decisions.md, D3)
+evaluation:
+  split_method: "walk_forward"
+  purge_gap_trading_days: 20        # must be >= horizon_trading_days
+
+paths:
+  raw_data: "data/raw"
+  interim_data: "data/interim"
+  processed_data: "data/processed"
+  models: "artifacts/models"
+  reports: "reports"

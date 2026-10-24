@@ -1,0 +1,14 @@
+# Virtual environment
+.venv/
+
+# Data and trained artifacts (never committed)
+/data/
+/artifacts/
+
+# Python / Jupyter caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local settings
+.env

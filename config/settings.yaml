@@ -85,8 +85,12 @@ rag:
   embedding_model: "sentence-transformers/all-MiniLM-L6-v2"   # Apache-2.0, runs on CPU
   chunk_size: 800                   # characters
   chunk_overlap: 120
+  retrieval:                        # D16: hybrid and headings did not validate, so the default is the original dense search
+    mode: "dense"                   # dense (default) | lexical | hybrid (reciprocal rank fusion of dense and TF-IDF)
+    embed_section_headings: false   # true embeds "section path + chunk text"
+    rrf_k: 60
   top_k: 4
-  min_relevance: 0.30               # cosine; below this the answer is "insufficient evidence" (fixed, not tuned)
+  min_relevance: 0.30               # dense cosine of the best passage; below this: "insufficient evidence" (fixed, not tuned)
   max_answer_sentences: 3
   eval_set: "knowledge_base/eval/retrieval_questions.json"
   eval_k: [1, 3, 5]

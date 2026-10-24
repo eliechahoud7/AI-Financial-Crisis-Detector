@@ -94,16 +94,26 @@ def extractive_answer(question: str, evidence: list[dict], embeddings, max_sente
 
 
 def answer(question: str, store, embeddings, top_k: int, min_relevance: float, max_sentences: int,
-           generator=None, min_support: float = 0.6) -> dict:
+           generator=None, min_support: float = 0.6, retriever=None) -> dict:
     """Retrieve, then answer extractively or (if `generator` is given) generatively with grounding checks.
 
-    A generated answer is used only if it passes `check_grounding`; otherwise the
-    extractive answer is returned with a warning. If the model itself says the
-    evidence is insufficient, the result is "insufficient_evidence".
+    With a `retriever` (D16), evidence is its top-k ranking and the question is
+    answered only if the best dense cosine over all chunks reaches
+    `min_relevance`. Without one, dense retrieval is used and passages below the
+    threshold are dropped. A generated answer is used only if it passes
+    `check_grounding`; otherwise the extractive answer is returned with a warning.
+    If the model says the evidence is insufficient, or gives a non-answer, the
+    result is "insufficient_evidence".
     """
-    evidence = retrieve(store, question, top_k)
-    usable = [e for e in evidence if e["score"] >= min_relevance]
-    result = {"question": question, "top_score": evidence[0]["score"] if evidence else None,
+    if retriever is not None:
+        evidence = retriever.search(question, top_k)
+        top_score = retriever.max_dense_score(question)
+        usable = evidence if top_score >= min_relevance else []
+    else:
+        evidence = retrieve(store, question, top_k)
+        top_score = evidence[0]["score"] if evidence else None
+        usable = [e for e in evidence if e["score"] >= min_relevance]
+    result = {"question": question, "top_score": top_score,
               "min_relevance": min_relevance, "evidence": evidence, "warnings": [], "generation": None}
     if not usable:
         return {**result, "status": "insufficient_evidence", "method": "none", "answer": INSUFFICIENT, "citations": []}
@@ -116,7 +126,7 @@ def answer(question: str, store, embeddings, top_k: int, min_relevance: float, m
             if is_abstention(generated):
                 return {**result, "status": "insufficient_evidence", "method": "generative",
                         "answer": INSUFFICIENT, "citations": []}
-            problems = check_grounding(generated, {e["rank"]: e["text"] for e in usable}, min_support)
+            problems = check_grounding(generated, {e["rank"]: e["text"] for e in usable}, min_support, question)
             result["generation"]["grounding_problems"] = problems
             if problems:
                 result["warnings"].append(f"generated answer rejected ({problems[0]}); extractive answer returned")
@@ -138,13 +148,34 @@ between after before during while because until again further once here our we y
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*%?")
 
 
+MIN_CLAIM_WORDS = 3  # below this many non-question content words, the word-share test is not meaningful
+
+
+def _stem(word: str) -> str:
+    """Very light suffix stripping, so "looks"/"look" and "reached"/"reach" match."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(word) > len(suffix) + 3 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
 def _words(text: str) -> list[str]:
     return [w for w in re.findall(r"[a-z][a-z0-9_-]+", text.lower()) if len(w) >= 3 and w not in STOPWORDS]
 
 
+NON_ANSWER = re.compile(
+    r"\b(?:is|are|was|were)\s+not\s+(?:directly\s+|explicitly\s+|clearly\s+)?"
+    r"(?:stated|mentioned|specified|provided|given|available|reported|found)\b"
+    r"|\b(?:does|do|did)\s+not\s+(?:state|mention|specify|provide|say|include)\b"
+    r"|\bno\s+(?:information|mention|data)\s+(?:is|was|about|on|regarding)\b", re.IGNORECASE)
+
+
 def is_abstention(text: str) -> bool:
+    """The model's refusal sentence, or a hedged non-answer such as "X is not directly stated" (D16)."""
     plain = CITATION.sub("", text).strip().lower().rstrip(".")
-    return plain.startswith(INSUFFICIENT.lower().rstrip(".")) or plain == "insufficient evidence"
+    if plain.startswith(INSUFFICIENT.lower().rstrip(".")) or plain == "insufficient evidence":
+        return True
+    return bool(NON_ANSWER.search(plain))
 
 
 def _cited_sentences(text: str) -> list[str]:
@@ -160,14 +191,19 @@ def _cited_sentences(text: str) -> list[str]:
     return merged
 
 
-def check_grounding(text: str, evidence: dict[int, str], min_support: float) -> list[str]:
+def check_grounding(text: str, evidence: dict[int, str], min_support: float, question: str = "") -> list[str]:
     """Problems with a generated answer; empty if every sentence is cited and supported by its cited evidence.
 
     Checks, per sentence: it cites at least one retrieved passage; every number in
     it appears in the cited passages; and at least `min_support` of its content
-    words appear in the cited passages. This is a lexical heuristic, not proof of
-    correctness.
+    words appear in the cited passages. Words restated from the question (matched
+    on a light stem, so "looks" matches "look") are not counted as claims, and the
+    word-share test is skipped when fewer than MIN_CLAIM_WORDS other content words
+    remain; the number check always applies (D16). This is a lexical heuristic, not
+    proof of correctness: it cannot detect a wrong claim built from words that
+    occur in the evidence.
     """
+    question_words = {_stem(w) for w in _words(question)}
     if not text.strip():
         return ["empty answer"]
     all_cited = {int(n) for n in CITATION.findall(text)}
@@ -188,9 +224,9 @@ def check_grounding(text: str, evidence: dict[int, str], min_support: float) -> 
         missing = [x for x in NUMBER.findall(body) if x.replace(",", "") not in source.replace(",", "")]
         if missing:
             problems.append(f"numbers {missing} not in cited evidence: {body[:80]!r}")
-        words = _words(body)
-        if words:
-            support = sum(w in source for w in words) / len(words)
+        words = [w for w in _words(body) if _stem(w) not in question_words]
+        if len(words) >= MIN_CLAIM_WORDS:
+            support = sum(_stem(w) in source for w in words) / len(words)
             if support < min_support:
                 problems.append(f"only {support:.0%} of content words found in cited evidence: {body[:80]!r}")
     return problems

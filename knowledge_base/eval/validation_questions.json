@@ -1,0 +1,30 @@
+{
+  "description": "Independent validation set for the RAG pipeline (docs/decisions.md, D16). Written before any Phase E improvement was implemented, from facts not covered by retrieval_questions.json (the development set). It must not be edited or used to choose settings; it is evaluated only for the baseline and the final configuration.",
+  "questions": [
+    {"id": "v01", "question": "What is the largest size a document chunk can have in the RAG index?", "relevant": [{"source": "docs/decisions.md", "contains": "chunks of up to 800 characters"}]},
+    {"id": "v02", "question": "Which sentence-embedding model does the question-answering system use?", "relevant": [{"source": "docs/decisions.md", "contains": "all-MiniLM-L6-v2"}, {"source": "README.md", "contains": "all-MiniLM-L6-v2"}]},
+    {"id": "v03", "question": "How many walk-forward folds are evaluated for the market-stress models?", "relevant": [{"source": "docs/decisions.md", "contains": "15 walk-forward folds"}]},
+    {"id": "v04", "question": "What block length does the bootstrap use for market-stress uncertainty?", "relevant": [{"source": "docs/decisions.md", "contains": "Block length 60 sessions"}]},
+    {"id": "v05", "question": "How many folds and repeats were used to cross-validate the company distress baselines?", "relevant": [{"source": "docs/model_card.md", "contains": "5 folds"}, {"source": "docs/decisions.md", "contains": "5-fold x 3-repeat"}]},
+    {"id": "v06", "question": "Which Taiwanese columns were removed for being exact copies of other columns?", "relevant": [{"source": "docs/model_card.md", "contains": "identical to `Current Liabilities/Liability`"}, {"source": "docs/decisions.md", "contains": "(identical to `Current"}]},
+    {"id": "v07", "question": "How many rows are in the held-out test split of the bankruptcy data?", "relevant": [{"source": "docs/model_card.md", "contains": "1,364"}]},
+    {"id": "v08", "question": "What is the last trading date included in the frozen market data snapshot?", "relevant": [{"source": "docs/decisions.md", "contains": "2026-10-23"}]},
+    {"id": "v09", "question": "What makes the market data download stop without saving anything?", "relevant": [{"source": "docs/decisions.md", "contains": "duplicate or unsorted dates"}]},
+    {"id": "v10", "question": "Why are the market-stress classifiers trained without class weights?", "relevant": [{"source": "docs/decisions.md", "contains": "No class weighting"}]},
+    {"id": "v11", "question": "How is the primary market-stress model chosen?", "relevant": [{"source": "docs/decisions.md", "contains": "highest pooled"}]},
+    {"id": "v12", "question": "Can the market-stress cross-validation selection be replaced after the test evaluation?", "relevant": [{"source": "docs/decisions.md", "contains": "even with `--force`"}]},
+    {"id": "v13", "question": "What decoding settings make the local language model deterministic?", "relevant": [{"source": "docs/decisions.md", "contains": "temperature 0, seed 42"}]},
+    {"id": "v14", "question": "How quickly does the local model produce text on this computer?", "relevant": [{"source": "docs/decisions.md", "contains": "6.5 output tokens/s"}]},
+    {"id": "v15", "question": "What share of a generated sentence's words must appear in the cited passages?", "relevant": [{"source": "docs/decisions.md", "contains": "(0.6)"}]},
+    {"id": "v16", "question": "Why was the LangChain community FAISS wrapper avoided?", "relevant": [{"source": "docs/decisions.md", "contains": "being sunset"}]},
+    {"id": "v17", "question": "How were confidence intervals computed for the distress models' test metrics?", "relevant": [{"source": "docs/model_card.md", "contains": "stratified bootstrap"}]},
+    {"id": "v18", "question": "Which bankruptcy feature equals one minus the debt ratio?", "relevant": [{"source": "docs/model_card.md", "contains": "Net worth/Assets"}, {"source": "docs/decisions.md", "contains": "Net worth/Assets"}]},
+    {"id": "v19", "question": "What happens to market-stress rows whose features are still warming up?", "relevant": [{"source": "docs/decisions.md", "contains": "eligible = False"}]},
+    {"id": "v20", "question": "Which VIX price fields are unreliable in the early history?", "relevant": [{"source": "docs/decisions.md", "contains": "only the VIX close is reliable"}, {"source": "docs/decisions.md", "contains": "VIX open, high and low are not"}]},
+    {"id": "w01", "question": "What is the current inflation rate in the euro area?", "answerable": false},
+    {"id": "w02", "question": "How did Bitcoin perform in 2021?", "answerable": false},
+    {"id": "w03", "question": "Who is the chief executive of Microsoft?", "answerable": false},
+    {"id": "w04", "question": "What is the capital city of Australia?", "answerable": false},
+    {"id": "w05", "question": "How do I file my US federal income tax return?", "answerable": false}
+  ]
+}

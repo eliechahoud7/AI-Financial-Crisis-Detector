@@ -14,8 +14,8 @@ import argparse
 import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fincrisis.rag import answer as ans
 from fincrisis.rag import evaluation as ev
 from fincrisis.rag import index as idx
 from fincrisis.rag import pipeline
@@ -33,9 +33,10 @@ def report_text(result: dict) -> str:
         rows.append(f"| {name} | " + " | ".join(f"{s[f'hit@{k}']:.3f}" for k in result["eval_k"])
                     + f" | {s['mrr']:.3f} | {s.get('answered_when_answerable', float('nan')):.3f} | "
                     f"{s.get('abstained_when_unanswerable', float('nan')):.3f} |")
-    misses = [r for r in result["retrievers"]["dense"]["results"] if r["answerable"] and (r["rank"] is None or r["rank"] > 1)]
+    main_name = result["configured_mode"]
+    misses = [r for r in result["retrievers"][main_name]["results"] if r["answerable"] and (r["rank"] is None or r["rank"] > 1)]
     miss_rows = [f"| {r['id']} | {r['question']} | {r['rank'] or '>' + str(max(result['eval_k']))} | {r['top_source']} |" for r in misses]
-    wrong_abstain = [r for r in result["retrievers"]["dense"]["results"]
+    wrong_abstain = [r for r in result["retrievers"][main_name]["results"]
                      if not r["answerable"] and r["top_score"] >= result["min_relevance"]]
     return "\n".join([
         "# RAG Retrieval Evaluation", "",
@@ -48,9 +49,9 @@ def report_text(result: dict) -> str:
         "| Retriever | " + " | ".join(f"hit@{k}" for k in result["eval_k"]) + " | MRR | Answered (answerable) | Abstained (unanswerable) |",
         "|---|" + "---|" * (len(result["eval_k"]) + 3),
         *rows, "",
-        "TF-IDF scores are not cosine similarities of the same kind, so its answer/abstain rates use the same "
-        "threshold only for reference.", "",
-        "## Dense retriever: questions not answered by the first passage", "",
+        f"Question set file: `{result['eval_set']}`. Every retriever answers or abstains on the best dense cosine "
+        "over all chunks, so those two columns are the same for all of them.", "",
+        f"## Configured retriever ({main_name}): questions not answered by the first passage", "",
         "| Id | Question | Rank of first relevant | Top source |", "|---|---|---|---|", *miss_rows, "",
         f"Unanswerable questions that passed the threshold: {[r['id'] for r in wrong_abstain] or 'none'}", "",
         "## Limitations", "",
@@ -63,11 +64,14 @@ def report_text(result: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--force", action="store_true", help="overwrite an existing report")
+    parser.add_argument("--questions", help="question set (default: rag.eval_set, the development set)")
     args = parser.parse_args()
     settings = pipeline.load_rag_settings()
     root = pipeline.PROJECT_ROOT
     out_dir = root / settings["reports_dir"]
-    outputs = [out_dir / "retrieval_eval.json", out_dir / "retrieval_eval.md"]
+    question_file = args.questions or settings["eval_set"]
+    suffix = "" if question_file == settings["eval_set"] else "_" + Path(question_file).stem
+    outputs = [out_dir / f"retrieval_eval{suffix}.json", out_dir / f"retrieval_eval{suffix}.md"]
     if any(p.exists() for p in outputs) and not args.force:
         print(f"Report already exists in {out_dir}. Nothing was written. Use --force to overwrite.")
         return 1
@@ -76,7 +80,7 @@ def main() -> int:
     except (RuntimeError, idx.RAGIndexError) as error:
         print(f"Failed: {error}")
         return 1
-    questions = json.loads((root / settings["eval_set"]).read_text(encoding="utf-8"))["questions"]
+    questions = json.loads((root / question_file).read_text(encoding="utf-8"))["questions"]
     chunks = chunk_dicts(store)
     problems = ev.validate_questions(questions, chunks)
     if problems:
@@ -86,12 +90,15 @@ def main() -> int:
     result = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "index": {k: manifest[k] for k in ("embedding_model", "embedding_model_revision", "chunks", "sources", "chunk_size", "chunk_overlap")},
-        "eval_set": settings["eval_set"], "questions": len(questions),
+        "embed_section_headings": manifest.get("embed_section_headings", False),
+        "eval_set": question_file, "questions": len(questions), "configured_mode": settings["retrieval"]["mode"],
         "answerable": sum(q.get("answerable", True) for q in questions), "eval_k": ks, "min_relevance": threshold,
-        "retrievers": {"dense": ev.evaluate(lambda q, k: ans.retrieve(store, q, k), questions, ks, threshold),
-                       "tfidf_baseline": ev.evaluate(ev.tfidf_search(chunks), questions, ks, threshold)},
+        "retrievers": {},
         "versions": pipeline.versions(),
     }
+    for mode in ("dense", "lexical", "hybrid"):
+        retriever = pipeline.make_retriever(store, settings, mode)
+        result["retrievers"][mode] = ev.evaluate(retriever.search, questions, ks, threshold, retriever.max_dense_score)
     out_dir.mkdir(parents=True, exist_ok=True)
     for path, text in ((outputs[0], json.dumps(result, indent=2, ensure_ascii=False) + "\n"), (outputs[1], report_text(result))):
         tmp = path.with_suffix(path.suffix + ".part")

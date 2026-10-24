@@ -72,6 +72,18 @@ ollama pull qwen2.5:3b
 .\.venv\Scripts\python.exe -B scripts\evaluate_rag_generation.py
 ```
 
+Retrieval uses semantic search (`rag.retrieval.mode: dense`). Hybrid
+(semantic plus TF-IDF) and lexical modes exist but are not the default: they
+improved the development questions but not the independent validation set
+(`docs/decisions.md`, D16).
+
+The evaluation scripts use the development questions
+(`knowledge_base/eval/retrieval_questions.json`) by default. `--questions`
+selects another set; the validation set
+(`knowledge_base/eval/validation_questions.json`) has already been used, so
+do not tune settings against it. Write a new held-out set for any further
+tuning.
+
 Add your own `.md` or `.txt` documents under `knowledge_base/documents/`,
 then rebuild with `--force`. The index refuses to load if any source has
 changed since it was built.

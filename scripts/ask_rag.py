@@ -46,7 +46,8 @@ def main() -> int:
         return 1
     generator, unavailable = make_generator(settings) if args.llm == "ollama" else (None, None)
     result = ans.answer(args.question, store, embeddings, args.k or settings["top_k"], settings["min_relevance"],
-                        settings["max_answer_sentences"], generator, settings["ollama"]["min_support"])
+                        settings["max_answer_sentences"], generator, settings["ollama"]["min_support"],
+                        pipeline.make_retriever(store, settings))
     if unavailable:
         result["warnings"].insert(0, f"local model unavailable ({unavailable}); extractive answer returned")
     if args.json:

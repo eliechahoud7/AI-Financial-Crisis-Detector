@@ -51,7 +51,23 @@ def open_store(settings: dict, root: Path = PROJECT_ROOT, embeddings=None, allow
     embeddings = embeddings or make_embeddings(settings["embedding_model"])
     store, manifest = idx.load_store(Path(root) / settings["index_dir"], embeddings, settings["embedding_model"],
                                      root, source_list(settings, root), allow_stale)
+    wanted = settings["retrieval"]["embed_section_headings"]
+    if manifest.get("embed_section_headings", False) != wanted:
+        raise idx.RAGIndexError(f"index was built with embed_section_headings={manifest.get('embed_section_headings', False)}, "
+                                f"config says {wanted}; rebuild with scripts/build_rag_index.py --force")
     return store, manifest, embeddings
+
+
+def make_retriever(store, settings: dict, mode: str | None = None):
+    """The configured retriever for answering; None means the original dense path of `answer()` (D16).
+
+    Pass `mode` explicitly (evaluation) to always get a `Retriever` object.
+    """
+    from fincrisis.rag.retrieval import Retriever
+    r = settings["retrieval"]
+    if mode is None and r["mode"] == "dense":
+        return None
+    return Retriever(store, mode or r["mode"], r["rrf_k"])
 
 
 def versions() -> dict:

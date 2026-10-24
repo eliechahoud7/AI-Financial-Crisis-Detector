@@ -8,6 +8,7 @@ embedding model and is skipped if it is not in the local cache.
 import json
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import numpy as np
@@ -254,6 +255,117 @@ class TestAnswer(unittest.TestCase):
         self.assertIn("not pulled", ans.ollama_status("http://h", "other", get=responses.__getitem__)["reason"])
         down = ans.ollama_status("http://h", "m", get=lambda u: (_ for _ in ()).throw(OSError("refused")))
         self.assertFalse(down["available"])
+
+
+class TestRetrievalImprovements(unittest.TestCase):
+    """D16: hybrid retrieval, section-aware embeddings, abstention gate, non-answers, question words."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        write_corpus(root)
+        paths = docs.discover_sources(root, SETTINGS["sources"])
+        self.chunks = docs.split_documents(docs.load_documents(paths, root), 200, 20)
+        self.emb = BagOfWordsEmbedding()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_section_heading_is_embedded_when_enabled(self):
+        doc = Document(page_content="Body text.", metadata={"section": "Risk Notes > Leverage"})
+        self.assertEqual(idx.embedding_text(doc, True), "Risk Notes > Leverage\nBody text.")
+        self.assertEqual(idx.embedding_text(doc, False), "Body text.")
+        no_heading = Document(page_content="Body.", metadata={"section": "(no heading)"})
+        self.assertEqual(idx.embedding_text(no_heading, True), "Body.")
+        plain = idx.FaissStore.from_documents(self.chunks, self.emb)
+        with_heading = idx.FaissStore.from_documents(self.chunks, self.emb, include_section=True)
+        i = next(j for j, c in enumerate(self.chunks) if c.metadata["section"] != "(no heading)")
+        self.assertFalse(np.allclose(plain.index.reconstruct(i), with_heading.index.reconstruct(i)))
+        k = next(j for j, c in enumerate(self.chunks) if c.metadata["section"] == "(no heading)")
+        self.assertTrue(np.allclose(plain.index.reconstruct(k), with_heading.index.reconstruct(k)))
+
+    def test_modes_rank_and_keep_dense_scores(self):
+        from fincrisis.rag.retrieval import Retriever
+        store = idx.FaissStore.from_documents(self.chunks, self.emb, include_section=True)
+        dense_cos = store.cosine_scores("leverage debt equity")
+        self.assertEqual(len(dense_cos), len(self.chunks))
+        for mode in ("dense", "lexical", "hybrid"):
+            hits = Retriever(store, mode).search("leverage debt equity", 3)
+            self.assertEqual([h["rank"] for h in hits], [1, 2, 3])
+            self.assertEqual(hits[0]["section"], "Risk Notes > Leverage", mode)
+            for h in hits:  # every hit carries its dense cosine, whatever the ranking
+                i = next(j for j, d in enumerate(store.documents) if d.metadata["chunk_id"] == h["chunk_id"])
+                self.assertAlmostEqual(h["score"], float(dense_cos[i]), places=6)
+        r = Retriever(store, "hybrid")
+        self.assertAlmostEqual(r.max_dense_score("leverage debt equity"), float(dense_cos.max()), places=6)
+        with self.assertRaises(ValueError):
+            Retriever(store, "other")
+
+    def test_hybrid_fusion_promotes_lexical_only_match(self):
+        from fincrisis.rag.retrieval import Retriever
+
+        class Constant(BagOfWordsEmbedding):  # dense scores carry no information
+            def _vector(self, text):
+                return [1.0] + [0.0] * (self.size - 1)
+        store = idx.FaissStore.from_documents(self.chunks, Constant())
+        target = next(c.metadata["chunk_id"] for c in self.chunks if "Volatility clusters" in c.page_content)
+        self.assertEqual(Retriever(store, "hybrid").search("volatility clusters persist", 1)[0]["chunk_id"], target)
+
+    def test_question_level_abstention_gate_with_retriever(self):
+        from fincrisis.rag.retrieval import Retriever
+        store = idx.FaissStore.from_documents(self.chunks, self.emb)
+        retriever = Retriever(store, "hybrid")
+        answered = ans.answer("leverage debt equity", store, self.emb, 3, 0.1, 2, retriever=retriever)
+        self.assertEqual(answered["status"], "answered")
+        self.assertEqual(len(answered["evidence"]), 3)
+        self.assertAlmostEqual(answered["top_score"], retriever.max_dense_score("leverage debt equity"))
+        refused = ans.answer("leverage debt equity", store, self.emb, 3, 0.999, 2, retriever=retriever,
+                             generator=lambda q, e: self.fail("model must not be called below the threshold"))
+        self.assertEqual(refused["status"], "insufficient_evidence")
+
+    def test_hedged_non_answers_count_as_abstention(self):
+        for text in ("The test score is not directly stated in the evidence [1].",
+                     "The documents do not mention the revenue [2].",
+                     "No information is given about that."):
+            self.assertTrue(ans.is_abstention(text), text)
+        for text in ("The meanings of labels 0 and 1 are not documented by UCI [1].",
+                     "Values above 1 are not assumed to be errors [2].",
+                     "The VIX feature is never filled from a later observation [1]."):
+            self.assertFalse(ans.is_abstention(text), text)
+
+    def test_words_restated_from_the_question_are_not_claims(self):
+        evidence = {1: "The first test session is 2015-01-02."}
+        answer_text = "The market-stress test period begins on 2015-01-02 [1]."
+        question = "On which date does the market-stress test period begin?"
+        self.assertTrue(ans.check_grounding(answer_text, evidence, 0.6))           # without the question: rejected
+        self.assertEqual(ans.check_grounding(answer_text, evidence, 0.6, question + " begins"), [])
+        self.assertIn("numbers", ans.check_grounding("It begins on 2016-01-04 [1].", evidence, 0.6, question)[0])
+        # word forms of question words do not count as claims; tiny remainders skip the ratio test
+        self.assertEqual(ans.check_grounding("The label looks 20 days ahead [1].", {1: "H = 20 trading days"}, 0.6,
+                                             "How many days ahead does the label look?"), [])
+        unsupported = "The label measures volatility clustering regimes [1]."
+        self.assertTrue(ans.check_grounding(unsupported, {1: "H = 20 trading days"}, 0.6, "What does the label measure?"))
+
+    def test_default_dense_mode_uses_the_original_answer_path(self):
+        store = idx.FaissStore.from_documents(self.chunks, self.emb)
+        dense = {"retrieval": {"mode": "dense", "rrf_k": 60}}
+        self.assertIsNone(pipeline.make_retriever(store, dense))
+        self.assertEqual(pipeline.make_retriever(store, dense, "dense").mode, "dense")  # explicit mode: evaluation
+        self.assertEqual(pipeline.make_retriever(store, {"retrieval": {"mode": "hybrid", "rrf_k": 60}}).mode, "hybrid")
+        project = pipeline.load_rag_settings()["retrieval"]
+        self.assertEqual((project["mode"], project["embed_section_headings"]), ("dense", False))
+
+    def test_open_store_rejects_heading_setting_mismatch(self):
+        root = Path(self.tmp.name)
+        settings = {**SETTINGS, "index_dir": "index", "retrieval": {"embed_section_headings": True, "mode": "hybrid", "rrf_k": 60}}
+        store, _, _ = build(root)  # manifest has no embed_section_headings -> treated as False
+        with unittest.mock.patch.object(pipeline, "source_list", return_value=list(store_sources(root))):
+            with self.assertRaises(idx.RAGIndexError):
+                pipeline.open_store(settings, root, embeddings=BagOfWordsEmbedding())
+
+
+def store_sources(root: Path):
+    return [p.relative_to(root.resolve()).as_posix() for p in docs.discover_sources(root, SETTINGS["sources"])]
 
 
 class TestEvaluation(unittest.TestCase):

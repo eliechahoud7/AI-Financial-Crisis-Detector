@@ -44,13 +44,19 @@ class FaissStore(VectorStore):
         return self._embedding
 
     @classmethod
-    def from_documents(cls, documents: list[Document], embedding, **kwargs) -> "FaissStore":
+    def from_documents(cls, documents: list[Document], embedding, include_section: bool = False, **kwargs) -> "FaissStore":
+        """Embed each chunk's text, optionally prefixed with its section heading path (D16)."""
         if not documents:
             raise RAGIndexError("no chunks to index")
-        vectors = _normalized(embedding.embed_documents([d.page_content for d in documents]))
+        vectors = _normalized(embedding.embed_documents([embedding_text(d, include_section) for d in documents]))
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
         return cls(embedding, index, list(documents))
+
+    def cosine_scores(self, query: str) -> np.ndarray:
+        """Cosine similarity of the query to every chunk, in document order."""
+        vector = _normalized([self._embedding.embed_query(query)])[0]
+        return self.index.reconstruct_n(0, self.index.ntotal) @ vector
 
     @classmethod
     def from_texts(cls, texts, embedding, metadatas=None, **kwargs) -> "FaissStore":
@@ -85,6 +91,13 @@ class FaissStore(VectorStore):
         index = faiss.read_index(str(directory / "index.faiss"))
         chunks = json.loads((directory / "chunks.json").read_text(encoding="utf-8"))
         return cls(embedding, index, [Document(page_content=c["text"], metadata=c["metadata"]) for c in chunks])
+
+
+def embedding_text(document: Document, include_section: bool) -> str:
+    section = document.metadata.get("section", "")
+    if include_section and section and section != "(no heading)":
+        return f"{section}\n{document.page_content}"
+    return document.page_content
 
 
 def sha256_file(path: Path) -> str:

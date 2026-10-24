@@ -56,17 +56,21 @@ def summarize(results: list[dict], ks: list[int], min_relevance: float) -> dict:
     return summary
 
 
-def evaluate(search, questions: list[dict], ks: list[int], min_relevance: float) -> dict:
-    """`search(question, k) -> list of hits` (each with rank, score, source, text)."""
+def evaluate(search, questions: list[dict], ks: list[int], min_relevance: float, top_score=None) -> dict:
+    """`search(question, k) -> list of hits` (each with rank, score, source, text).
+
+    `top_score(question)`, if given, is the score compared with `min_relevance`
+    for answering or abstaining; otherwise the first hit's score is used.
+    """
     max_k = max(ks)
     results = []
     for q in questions:
         hits = search(q["question"], max_k)
         answerable = q.get("answerable", True)
+        score = top_score(q["question"]) if top_score else (hits[0]["score"] if hits else None)
         results.append({"id": q["id"], "question": q["question"], "answerable": answerable,
                         "rank": first_relevant_rank(hits, q["relevant"]) if answerable else None,
-                        "top_score": hits[0]["score"] if hits else None,
-                        "top_source": hits[0]["source"] if hits else None})
+                        "top_score": score, "top_source": hits[0]["source"] if hits else None})
     return {"summary": summarize(results, ks, min_relevance), "results": results}
 
 

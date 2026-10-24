@@ -18,6 +18,7 @@ import json
 import statistics
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fincrisis.rag import answer as ans
 from fincrisis.rag import evaluation as ev
@@ -35,11 +36,11 @@ def outcome(result: dict) -> str:
     return "rejected" if result.get("generation") else "generator_error"
 
 
-def evaluate(questions, store, embeddings, settings, generator) -> list[dict]:
+def evaluate(questions, store, embeddings, settings, generator, retriever=None) -> list[dict]:
     rows = []
     for i, q in enumerate(questions, 1):
         r = ans.answer(q["question"], store, embeddings, settings["top_k"], settings["min_relevance"],
-                       settings["max_answer_sentences"], generator, settings["ollama"]["min_support"])
+                       settings["max_answer_sentences"], generator, settings["ollama"]["min_support"], retriever)
         g = r.get("generation") or {}
         answerable = q.get("answerable", True)
         cited = [e for e in r["evidence"] if e["rank"] in {c["marker"] for c in r["citations"]}]
@@ -111,11 +112,14 @@ def report_text(meta: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--force", action="store_true", help="overwrite an existing report")
+    parser.add_argument("--questions", help="question set (default: rag.eval_set, the development set)")
     args = parser.parse_args()
     settings = pipeline.load_rag_settings()
     root, o = pipeline.PROJECT_ROOT, settings["ollama"]
     out_dir = root / settings["reports_dir"]
-    outputs = [out_dir / "generation_eval.json", out_dir / "generation_eval.md"]
+    question_file = args.questions or settings["eval_set"]
+    suffix = "" if question_file == settings["eval_set"] else "_" + Path(question_file).stem
+    outputs = [out_dir / f"generation_eval{suffix}.json", out_dir / f"generation_eval{suffix}.md"]
     if any(p.exists() for p in outputs) and not args.force:
         print(f"Report already exists in {out_dir}. Nothing was written. Use --force to overwrite.")
         return 1
@@ -128,13 +132,15 @@ def main() -> int:
     except (RuntimeError, idx.RAGIndexError) as error:
         print(f"Failed: {error}")
         return 1
-    questions = json.loads((root / settings["eval_set"]).read_text(encoding="utf-8"))["questions"]
+    questions = json.loads((root / question_file).read_text(encoding="utf-8"))["questions"]
     generator = ans.ollama_generator(o["model"], o["url"], o["timeout_seconds"], o["options"], settings["max_answer_sentences"])
     print(f"Generating answers for {len(questions)} questions with {o['model']} (this takes a while on CPU)")
-    rows = evaluate(questions, store, embeddings, settings, generator)
+    retriever = pipeline.make_retriever(store, settings)
+    rows = evaluate(questions, store, embeddings, settings, generator, retriever)
     meta = {"generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "model": o["model"],
             "ollama_version": status["version"], "options": o["options"], "min_relevance": settings["min_relevance"],
-            "min_support": o["min_support"], "index_chunks": manifest["chunks"],
+            "min_support": o["min_support"], "index_chunks": manifest["chunks"], "eval_set": question_file,
+            "retrieval": settings["retrieval"], "embed_section_headings": manifest.get("embed_section_headings", False),
             "embedding_model": manifest["embedding_model"], "summary": summarize(rows), "results": rows,
             "versions": pipeline.versions()}
     out_dir.mkdir(parents=True, exist_ok=True)

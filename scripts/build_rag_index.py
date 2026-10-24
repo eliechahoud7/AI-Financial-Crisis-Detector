@@ -27,10 +27,12 @@ def build(settings: dict, root: Path, embeddings, force: bool) -> dict:
         raise idx.RAGIndexError(f"no documents match {settings['sources']}")
     loaded = docs.load_documents(paths, root)
     chunks = docs.split_documents(loaded, settings["chunk_size"], settings["chunk_overlap"])
-    store = idx.FaissStore.from_documents(chunks, embeddings)
+    include_section = settings["retrieval"]["embed_section_headings"]
+    store = idx.FaissStore.from_documents(chunks, embeddings, include_section=include_section)
     manifest = {
         "built_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "embedding_model": settings["embedding_model"],
+        "embed_section_headings": include_section,
         "embedding_model_revision": pipeline.model_revision(settings["embedding_model"]),
         "dimension": int(store.index.d), "chunks": len(chunks),
         "chunk_size": settings["chunk_size"], "chunk_overlap": settings["chunk_overlap"],

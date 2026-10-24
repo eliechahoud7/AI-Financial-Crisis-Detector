@@ -509,3 +509,94 @@ if the decision changes.
   set and reports accepted, rejected and refused shares, whether accepted
   answers cite an expected relevant passage, and latency. It lists accepted
   answers for manual review.
+
+---
+
+## D16. RAG improvements after the Phase E evaluation
+
+- **Date:** 2026-10-24
+- **Evaluation discipline:**
+  - **Development set:** `retrieval_questions.json` (32 questions) had
+    already been analysed, so it is now the development set and was used to
+    diagnose problems and choose settings.
+  - **Validation set:** `validation_questions.json` (25 questions: 20
+    answerable, 5 unanswerable) was written **before** any
+    change, from facts the development set does not cover. Its SHA-256
+    (`7ed9c16f…`) was recorded at creation. It is evaluated only twice: on
+    the baseline (commit `e21a291`) and on the final configuration. It is
+    never used to choose settings.
+  - **Separate reports:** each evaluation script writes the development and
+    validation results to separate reports (the `--questions` option).
+- **Diagnosis (development set):**
+  - 5 of the 9 unnecessary model refusals, and both wrong answers that
+    passed the grounding check, had no relevant passage among the 4 passages
+    sent to the model. TF-IDF ranked the answer first for 3 of those
+    refusals.
+  - Retrieval, not the model, was the main problem.
+- **Changes:**
+  1. **Hybrid retrieval** (`src/fincrisis/rag/retrieval.py`): reciprocal
+     rank fusion of the dense ranking and a TF-IDF ranking (chunk text plus
+     section), with `rrf_k = 60`. TF-IDF is fitted locally when the index
+     loads.
+  2. **Section headings embedded** with the chunk text
+     (`rag.retrieval.embed_section_headings`). This is recorded in the
+     manifest, and an index built with the other setting is refused.
+  3. **Abstention gate:** the question is answered only if the best dense
+     cosine over all chunks reaches `min_relevance` (0.30, unchanged).
+     Evidence is the top-k of the configured ranking. This keeps the
+     threshold's meaning while allowing lexically found passages as
+     evidence.
+  4. **Hedged non-answers** ("X is not directly stated", "the documents do
+     not mention…") count as "insufficient evidence" instead of being
+     accepted.
+  5. **Grounding check:**
+     - Words restated from the question, including simple word forms such
+       as "looks" for "look", are not counted as unsupported claims.
+     - The word-share test applies only when at least 3 other content words
+       remain.
+     - The number check is unchanged and applies to every sentence.
+     - Answers without citations are still rejected; citations are never
+       added after the fact.
+- **Not changed:** the prompt, the model, `min_support` (0.6), `top_k` (4)
+  and the relevance threshold. The market-stress and company-distress
+  components are untouched.
+- **Results.** The development set chose the changes; the validation set was
+  run once on the baseline and once on the full set of changes. "Wrong
+  accepted" is from a manual review of every accepted generated answer.
+
+  | Measure | Dev baseline | Dev changes | Val baseline | Val changes |
+  |---|---|---|---|---|
+  | Retrieval hit@3 | 0.538 | 0.769 | 0.550 | 0.500 |
+  | Retrieval hit@5 | 0.615 | 0.808 | 0.600 | 0.600 |
+  | Retrieval MRR | 0.362 | 0.482 | 0.404 | 0.400 |
+  | Answerable: accepted / rejected / refused | 12 / 5 / 9 | 12 / 7 / 7 | 8 / 6 / 6 | 9 / 4 / 7 |
+  | Accepted but wrong | 2 | 0 | 0 | 2 |
+  | Unanswerable refused | 6/6 | 6/6 | 5/5 | 5/5 |
+
+  The retrieval gains did not hold on the validation set:
+  - the hybrid's hit@3 fell from 0.550 to 0.500, with no gain at hit@5;
+  - embedding the headings lowered dense hit@3 from 0.550 to 0.400;
+  - two wrong answers passed the grounding check (v06 named the kept
+    columns as the removed ones; v10 gave D9's class-weight setup as the
+    reason the market-stress models use none).
+
+  One question moves these rates by 0.05, so the differences are within
+  noise. The evidence does not support any improvement.
+- **Adopted configuration (2026-10-24, after validation):**
+  - **Retrieval reverted** to the original dense search without headings
+    (`rag.retrieval.mode: dense`, `embed_section_headings: false`). Dense
+    mode uses the original answering path unchanged. The hybrid and lexical
+    modes and the heading option remain available, with tests, but are not
+    the default.
+  - **Kept:** the hedged non-answer refusals (change 4), the grounding-check
+    change (change 5), the evaluation tooling (`--questions`, per-mode
+    retrieval comparison), and their tests.
+  - **Not independently validated:** this adopted combination (original
+    retrieval plus changes 4 and 5) was not measured on the validation set.
+    The validation set has now been used and must not be used to tune
+    settings. Changes 4 and 5 are kept on their reasoning: a hedged
+    non-answer is not an answer, and words restated from the question are
+    not claims. Their effect has not been isolated.
+- **Next steps:** any further tuning needs a new held-out question set. A
+  semantic support check could catch inverted or misattributed claims (v06,
+  v10) that a lexical check cannot.

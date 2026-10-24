@@ -23,6 +23,11 @@ evaluation:
   split_method: "walk_forward"
   purge_gap_trading_days: 20        # must be >= horizon_trading_days
 
+# Company distress model (see docs/decisions.md, D8)
+company_distress:
+  test_size: 0.2                    # stratified hold-out share
+  cv_folds: 5                       # stratified CV within the training set
+
 paths:
   raw_data: "data/raw"
   interim_data: "data/interim"

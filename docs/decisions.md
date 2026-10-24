@@ -88,8 +88,18 @@ if the decision changes.
   - **No time column per row:** a strict chronological split is not possible.
     This is a cross-sectional classifier, not a time-based forecast, and results
     are reported with that caveat.
-  - **Strong class imbalance:** few bankrupt companies.
-  - **Features are already normalized:** the original units are not available.
+  - **Strong class imbalance:** 220 of 6,819 rows have label 1 (3.23%).
+  - **Mixed scales (updated 2026-10-24):** 71 features lie in [0, 1], but 24
+    features also contain values above 1, almost all above 10⁶ (rounded to 3
+    significant digits). Their cause is unknown: UCI documents no units,
+    definitions, or preprocessing. They are kept unchanged and treated as
+    observations requiring investigation, not as errors.
+  - **Target labels unverified (updated 2026-10-24):** UCI does not document
+    what 0 and 1 mean, and the original paper was not accessible. No
+    assumption is made about which class represents bankruptcy.
+  - **No company identifier:** the same company could appear in several rows,
+    so a random split may place it in both train and test.
+  - **Feature timing undocumented** relative to the bankruptcy event.
 
 ---
 
@@ -124,3 +134,31 @@ if the decision changes.
 - **Date:** 2026-10-24
 - **Decision:** Build one milestone at a time. Folders and dependencies for later
   milestones (RAG, agents, UI) are added only when that milestone starts.
+
+---
+
+## D8. Company distress preprocessing and split
+
+- **Date:** 2026-10-24
+- **Decision:** `scripts/preprocess_taiwan_bankruptcy.py` writes
+  `data/interim/taiwan_bankruptcy/` using only deterministic,
+  target-independent steps:
+  - Exact parsing (`float_precision="round_trip"`).
+  - ASCII snake_case names (`Bankrupt?` -> `bankrupt`), with the original
+    names and positions in `column_map.csv`. Collisions are rejected.
+  - Four columns dropped, each re-verified on the data at run time:
+    `Current Liability to Liability` (identical to `Current
+    Liabilities/Liability`), `Current Liability to Equity` (identical to
+    `Current Liabilities/Equity`), `Net worth/Assets` (equals
+    1 - `Debt ratio %`), and `Net Income Flag` (constant).
+  - Kept unchanged: `Liability-Assets Flag` (near-constant), `Operating Gross
+    Margin` and `Gross Profit to Sales` (near-identical, not identical), and
+    all 24 large-value features.
+  - Stratified 80/20 train/test split, seed 42, saved in `split.csv`.
+- **Leakage rules:** nothing is fitted in preprocessing. Every data-dependent
+  step (large-value treatment, imputation, scaling, selection, class
+  weights) is fitted inside a pipeline on training folds only. Model choices
+  use stratified 5-fold CV within the training set; the test set is used once.
+- **Metrics:** PR-AUC (primary), ROC-AUC, precision and recall at a chosen
+  threshold, Brier score, calibration, and bootstrap confidence intervals.
+  Accuracy is not a headline metric.

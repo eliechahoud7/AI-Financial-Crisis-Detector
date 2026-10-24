@@ -7,8 +7,11 @@ Usage:
 
 Stage "cv" passes only development rows (before the first test session minus
 the purge) to the modelling code, runs the 15 walk-forward folds, and freezes
-thresholds in selection.json. Stage "final" requires selection.json, fits each
-model on all development rows, and evaluates the 2015+ test set once.
+thresholds and the primary model in selection.json. It refuses to replace the
+selection once the test set has been evaluated, or to change frozen values
+without --accept-changed-selection. Stage "final" requires a complete
+selection.json produced by the current, committed code, fits each model on
+all development rows, and evaluates the 2015+ test set once.
 
 Label 1 means the S&P 500 closes at least 5% below its running high within
 the next 20 sessions (D2). Scores rank risk; they are not forecasts.
@@ -129,12 +132,33 @@ def comparison_pairs(names: list[str]) -> list[tuple[str, str]]:
     return pairs + ([("xgboost", "logistic_regression")] if len(fitted) == 2 else [])
 
 
-def run_cv(dataset_dir, report_dir, settings, force, raw_check) -> int:
+PRIMARY_RULE = "highest pooled walk-forward average precision among non-dummy models (D13)"
+
+
+def select_primary(results: dict) -> dict:
+    """Primary model from validation results only; the dummy is a reference, not a candidate."""
+    candidates = {n: r["average_precision"] for n, r in results["models"].items() if n != "dummy"}
+    name = max(candidates, key=candidates.get)
+    diffs = results["bootstrap"]["primary"]["differences"]
+    evidence = {k: v for k, v in diffs.items() if name in k.split(" - ")}
+    return {"name": name, "rule": PRIMARY_RULE,
+            "ranking": sorted(([n, ap] for n, ap in candidates.items()), key=lambda x: -x[1]),
+            "paired_differences_involving_primary": evidence}
+
+
+def run_cv(dataset_dir, report_dir, settings, force, raw_check, accept_changed_selection=False) -> int:
     out = {name: report_dir / name for name in CV_FILES}
+    tested = [str(report_dir / n) for n in FINAL_FILES if (report_dir / n).exists()]
+    if tested:
+        print(f"The held-out test set has already been evaluated with this selection: {tested}\n"
+              "CV results and selection.json cannot be replaced after the test evaluation (not even with --force). "
+              "Nothing was written.")
+        return 1
     existing = [str(p) for p in out.values() if p.exists()]
     if existing and not force:
         print(f"CV output(s) already exist: {existing}\nNothing was written. Use --force to overwrite.")
         return 1
+    previous = json.loads(out["selection.json"].read_text(encoding="utf-8")) if out["selection.json"].exists() else None
     raw_before = raw_check()
     data, meta = load_market_dataset(dataset_dir)
     checksum = meta["output"]["dataset.csv"]
@@ -157,9 +181,21 @@ def run_cv(dataset_dir, report_dir, settings, force, raw_check) -> int:
     if load_market_dataset(dataset_dir)[1]["output"]["dataset.csv"] != checksum or raw_check() != raw_before:
         print("Input data changed during the CV stage. Nothing was written.")
         return 1
+    primary = select_primary(results)
+    if previous is not None and not accept_changed_selection:
+        changed = []
+        if previous.get("thresholds_max_f1") != thresholds:
+            changed.append("thresholds_max_f1")
+        if "primary_model" in previous and previous["primary_model"]["name"] != primary["name"]:
+            changed.append("primary_model")
+        if changed:
+            print(f"Re-running CV would change the frozen {changed} in the existing selection.json. Nothing was "
+                  "written. Pass --accept-changed-selection only if a new experiment is intended.")
+            return 1
     selection = {
         "stage": "cv", "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "caveat": CAVEAT, "features": FEATURES, "models": kinds, "thresholds_max_f1": thresholds,
+        "primary_model": primary,
         "threshold_rule": "max F1 on pooled walk-forward validation predictions (development rows only)",
         "development": {"last_position": int(dev_limit - 1), "last_date": str(dev.index[-1].date()),
                         "validation_rows": int(len(oof)), "validation_label_1": int(y.sum())},
@@ -177,11 +213,40 @@ def run_cv(dataset_dir, report_dir, settings, force, raw_check) -> int:
     print(f"Saved CV outputs to {report_dir}. Validation rows {len(oof)}, label 1 {int(y.sum())}.")
     for name, r in results["models"].items():
         print(f"  {name:28} pooled AP {fmt(r['average_precision'])}  ROC-AUC {fmt(r['roc_auc'])}  threshold {thresholds[name]:.4f}")
+    print(f"Primary model (by validation only): {primary['name']}")
     print("The test period was not passed to the modelling code.")
     return 0
 
 
-def run_final(dataset_dir, report_dir, artifacts_dir, force, raw_check) -> int:
+def check_selection(selection: dict, models: dict, require_clean_code: bool, current_git: dict) -> list[str]:
+    """Reasons the frozen selection cannot be used for the final stage (empty if it can)."""
+    problems = []
+    for key in ("models", "thresholds_max_f1", "features", "primary_model", "git", "dataset_sha256"):
+        if key not in selection:
+            problems.append(f"selection.json has no '{key}' (re-run --stage cv with the current code)")
+    if problems:
+        return problems
+    if selection["features"] != FEATURES:
+        problems.append("selection.json features differ from the current FEATURES")
+    kinds = {name: spec[0] for name, spec in models.items()}
+    if selection["models"] != kinds:
+        problems.append(f"models rebuilt from the frozen settings {kinds} differ from selection.json {selection['models']}")
+    if set(selection["thresholds_max_f1"]) != set(models):
+        problems.append("frozen thresholds do not cover exactly the selected models")
+    if selection["primary_model"]["name"] not in models:
+        problems.append("primary model is not among the models")
+    if require_clean_code:
+        if selection["git"].get("dirty") is not False:
+            problems.append("selection.json was produced from uncommitted code; commit, then re-run --stage cv")
+        if current_git.get("dirty") is not False:
+            problems.append("the working tree has uncommitted changes; the final stage must run on committed code")
+        if current_git.get("commit") != selection["git"].get("commit"):
+            problems.append(f"current commit {current_git.get('commit')} differs from the CV commit "
+                            f"{selection['git'].get('commit')}; re-run --stage cv on this commit first")
+    return problems
+
+
+def run_final(dataset_dir, report_dir, artifacts_dir, force, raw_check, require_clean_code=False) -> int:
     selection_path = report_dir / "selection.json"
     if not selection_path.exists():
         print(f"{selection_path} not found. Run --stage cv and review it first. Nothing was written.")
@@ -191,7 +256,16 @@ def run_final(dataset_dir, report_dir, artifacts_dir, force, raw_check) -> int:
     if existing and not force:
         print(f"Final output(s) already exist: {existing}\nNothing was written. Use --force to overwrite.")
         return 1
-    selection = json.loads(selection_path.read_text(encoding="utf-8"))
+    selection_bytes = selection_path.read_bytes()
+    selection = json.loads(selection_bytes.decode("utf-8"))
+    if "settings" not in selection or "seed" not in selection:
+        print("selection.json is incomplete. Nothing was written.")
+        return 1
+    problems = check_selection(selection, ms_models.build_models(selection["settings"], selection["seed"]),
+                               require_clean_code, git_state())
+    if problems:
+        print("The frozen selection cannot be used:\n  " + "\n  ".join(problems) + "\nNothing was written.")
+        return 1
     raw_before = raw_check()
     data, meta = load_market_dataset(dataset_dir)
     if meta["output"]["dataset.csv"] != selection["dataset_sha256"]:
@@ -202,6 +276,8 @@ def run_final(dataset_dir, report_dir, artifacts_dir, force, raw_check) -> int:
     splits = make_splits(data, settings)
     m, seed = selection["settings"], selection["seed"]
     models = ms_models.build_models(m, seed)
+    if splits["development"].max() + splits["horizon"] >= splits["test"].min():
+        raise MarketDataError("a development label overlaps the test period")
     dev_rows, test_rows = data.iloc[splits["development"]], data.iloc[splits["test"]]
     X_dev, X_test = ms_models.feature_matrix(dev_rows), ms_models.feature_matrix(test_rows)
     scores, fitted = {}, {}
@@ -213,6 +289,9 @@ def run_final(dataset_dir, report_dir, artifacts_dir, force, raw_check) -> int:
                        comparison_pairs(list(models)))
     if load_market_dataset(dataset_dir)[1]["output"]["dataset.csv"] != selection["dataset_sha256"] or raw_check() != raw_before:
         print("Input data changed during the final stage. Nothing was written.")
+        return 1
+    if selection_path.read_bytes() != selection_bytes:
+        print("selection.json changed during the final stage. Nothing was written.")
         return 1
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -233,7 +312,9 @@ def run_final(dataset_dir, report_dir, artifacts_dir, force, raw_check) -> int:
                            "last_date": str(dev_rows.index[-1].date())},
             "test": {"rows": int(len(test_rows)), "first_date": str(test_rows.index[0].date()),
                      "last_date": str(test_rows.index[-1].date())},
-            "dataset_sha256": selection["dataset_sha256"], "git": git_state(), "versions": versions()}
+            "dataset_sha256": selection["dataset_sha256"], "git": git_state(), "versions": versions(),
+            "selection_sha256": hashlib.sha256(selection_bytes).hexdigest(),
+            "selection_git": selection["git"], "primary_model_from_cv": selection["primary_model"]["name"]}
     predictions = pd.DataFrame({"date": test_rows.index.strftime("%Y-%m-%d"), "position": test_rows["position"].to_numpy(),
                                 "label": y, **scores})
     write_outputs({
@@ -286,8 +367,11 @@ def build_report(title: str, results: dict, thresholds: dict, selection: dict, f
         f"Rows: {results['rows']}, label 1: {results['label_1']} (prevalence {results['prevalence']:.3f}; this is the "
         "average precision of an uninformative score). Inputs: the 16 features of D12. Fixed settings, no tuning.",
         "",
-        "Thresholds were chosen on the pooled walk-forward validation predictions and frozen in `selection.json`"
-        + (". The test set was evaluated once at those thresholds; no model is declared the winner." if final else
+        (f"Primary model, chosen on validation results only ({selection['primary_model']['rule']}): "
+         f"`{selection['primary_model']['name']}`. " if "primary_model" in selection else "")
+        + "Thresholds were chosen on the pooled walk-forward validation predictions and frozen in `selection.json`"
+        + (". The test set was evaluated once at those thresholds; every model is reported, and test results "
+           "do not change the primary model." if final else
            "; on the validation data they are optimistic because they were chosen there."),
         "",
         f"## Pooled metrics (95% block-bootstrap interval, {boot['block_length']}-session blocks, "
@@ -356,13 +440,13 @@ def raw_checker(raw_dir: Path | None):
 
 
 def run(stage: str, dataset_dir: Path, report_dir: Path, artifacts_dir: Path, settings: dict, force: bool,
-        raw_dir: Path | None = None) -> int:
+        raw_dir: Path | None = None, require_clean_code: bool = False, accept_changed_selection: bool = False) -> int:
     try:
         if settings["market_stress"]["threshold_rule"] != "max_f1":
             raise MarketDataError("only threshold_rule 'max_f1' is implemented")
         if stage == "cv":
-            return run_cv(dataset_dir, report_dir, settings, force, raw_checker(raw_dir))
-        return run_final(dataset_dir, report_dir, artifacts_dir, force, raw_checker(raw_dir))
+            return run_cv(dataset_dir, report_dir, settings, force, raw_checker(raw_dir), accept_changed_selection)
+        return run_final(dataset_dir, report_dir, artifacts_dir, force, raw_checker(raw_dir), require_clean_code)
     except (MarketDataError, ValueError) as error:
         print(f"Failed: {error}\nNothing was written.")
         return 1
@@ -372,13 +456,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--stage", choices=["cv", "final"], required=True)
     parser.add_argument("--force", action="store_true", help="overwrite this stage's existing outputs")
+    parser.add_argument("--accept-changed-selection", action="store_true",
+                        help="cv only: allow a re-run to change the frozen thresholds or primary model")
     args = parser.parse_args()
     settings = load_settings()
     paths = settings["paths"]
     return run(args.stage, PROJECT_ROOT / paths["processed_data"] / "market_stress",
                PROJECT_ROOT / paths["data_reports"] / "market_stress" / "models",
                PROJECT_ROOT / paths["models"] / "market_stress", settings, args.force,
-               raw_dir=PROJECT_ROOT / paths["raw_data"] / "market")
+               raw_dir=PROJECT_ROOT / paths["raw_data"] / "market", require_clean_code=True,
+               accept_changed_selection=args.accept_changed_selection)
 
 
 if __name__ == "__main__":

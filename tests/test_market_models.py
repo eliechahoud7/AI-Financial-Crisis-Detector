@@ -238,6 +238,82 @@ class TestTwoStageWorkflowSynthetic(unittest.TestCase):
                 self.assertEqual(test_metrics["models"][name]["at_max_f1_threshold"]["threshold"], threshold)
             self.assertTrue((models / "xgboost.joblib").exists() and (models / "model_metadata.json").exists())
             self.assertEqual(hashlib.sha256((tmp / "processed" / "dataset.csv").read_bytes()).hexdigest(), data_hash)
+            self.assertEqual(test_metrics["primary_model_from_cv"], selection["primary_model"]["name"])
+            self.assertEqual(test_metrics["selection_sha256"],
+                             hashlib.sha256((reports / "selection.json").read_bytes()).hexdigest())
+            selection_bytes = (reports / "selection.json").read_bytes()
+            with redirect_stdout(quiet):
+                self.assertEqual(call("cv", force=True), 1)            # selection is locked after the test run
+            self.assertEqual((reports / "selection.json").read_bytes(), selection_bytes)
+
+
+def built_workspace(tmp: Path):
+    write_snapshot(tmp / "raw")
+    settings = full_settings()
+    with redirect_stdout(io.StringIO()):
+        assert bmd.run(tmp / "raw", tmp / "processed", tmp / "reports", settings, False) == 0
+    reports, models = tmp / "reports" / "models", tmp / "artifacts"
+
+    def call(stage, force=False, **kwargs):
+        with redirect_stdout(io.StringIO()):
+            return tms.run(stage, tmp / "processed", reports, models, settings, force, raw_dir=tmp / "raw", **kwargs)
+    return reports, call
+
+
+class TestSelectionSafeguards(unittest.TestCase):
+    def test_primary_model_is_best_non_dummy_validation_score(self):
+        results = {"models": {"dummy": {"average_precision": 0.9}, "a": {"average_precision": 0.4},
+                              "b": {"average_precision": 0.6}},
+                   "bootstrap": {"primary": {"differences": {"b - a": {"mean": 0.2}, "a - dummy": {"mean": 0.1}}}}}
+        primary = tms.select_primary(results)
+        self.assertEqual(primary["name"], "b")
+        self.assertEqual(primary["ranking"], [["b", 0.6], ["a", 0.4]])
+        self.assertEqual(set(primary["paired_differences_involving_primary"]), {"b - a"})
+
+    def test_rerun_cannot_silently_change_frozen_thresholds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reports, call = built_workspace(Path(tmp))
+            self.assertEqual(call("cv"), 0)
+            selection = json.loads((reports / "selection.json").read_text(encoding="utf-8"))
+            self.assertEqual(call("cv", force=True), 0)               # identical re-run is allowed
+            selection["thresholds_max_f1"]["xgboost"] += 0.01         # pretend the frozen value was different
+            (reports / "selection.json").write_text(json.dumps(selection), encoding="utf-8")
+            tampered = (reports / "selection.json").read_bytes()
+            self.assertEqual(call("cv", force=True), 1)
+            self.assertEqual((reports / "selection.json").read_bytes(), tampered)
+            self.assertEqual(call("cv", force=True, accept_changed_selection=True), 0)
+
+    def test_final_refuses_inconsistent_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reports, call = built_workspace(Path(tmp))
+            self.assertEqual(call("cv"), 0)
+            original = json.loads((reports / "selection.json").read_text(encoding="utf-8"))
+            for change in ("drop_primary", "features", "models", "thresholds"):
+                broken = copy.deepcopy(original)
+                if change == "drop_primary":
+                    del broken["primary_model"]
+                elif change == "features":
+                    broken["features"] = broken["features"][:-1]
+                elif change == "models":
+                    broken["models"]["extra"] = "fit"
+                else:
+                    del broken["thresholds_max_f1"]["dummy"]
+                (reports / "selection.json").write_text(json.dumps(broken), encoding="utf-8")
+                self.assertEqual(call("final"), 1, change)
+                self.assertFalse((reports / "test_metrics.json").exists(), change)
+
+    def test_code_version_check(self):
+        models = msm.build_models(MODEL_SETTINGS, 42)
+        selection = {"models": {n: s[0] for n, s in models.items()}, "thresholds_max_f1": {n: 0.5 for n in models},
+                     "features": FEATURES, "primary_model": {"name": "xgboost"}, "dataset_sha256": "x",
+                     "git": {"commit": "abc", "dirty": False}}
+        check = tms.check_selection
+        self.assertEqual(check(selection, models, True, {"commit": "abc", "dirty": False}), [])
+        self.assertTrue(check(selection, models, True, {"commit": "def", "dirty": False}))   # different commit
+        self.assertTrue(check(selection, models, True, {"commit": "abc", "dirty": True}))    # uncommitted changes
+        dirty_cv = {**selection, "git": {"commit": "abc", "dirty": True}}
+        self.assertTrue(check(dirty_cv, models, True, {"commit": "abc", "dirty": False}))    # CV ran on dirty code
+        self.assertEqual(check(dirty_cv, models, False, {"commit": "zzz", "dirty": True}), [])  # check disabled
 
 
 REAL = PROJECT_ROOT / "data" / "processed" / "market_stress"

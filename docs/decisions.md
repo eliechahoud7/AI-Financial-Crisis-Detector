@@ -399,3 +399,21 @@ if the decision changes.
 - **Artifacts:** reports in `data/reports/market_stress/models/`, models in
   `artifacts/models/market_stress/`. Both are ignored by Git and separate
   from the company-distress component.
+- **Primary model and test-set safeguards (added 2026-10-24, after the CV
+  results and before any test evaluation):**
+  - **Primary model:** the non-dummy model with the highest pooled
+    walk-forward average precision. It is recorded in `selection.json` with
+    its ranking and paired-difference evidence. The final stage still reports
+    every model, and test results cannot change the primary model.
+  - **Locked selection:** once the final outputs exist, `--stage cv` refuses
+    to replace `selection.json`, even with `--force`.
+  - **Frozen values:** a CV re-run may not change the frozen thresholds or
+    the primary model unless `--accept-changed-selection` is given.
+  - **Checks before the final stage:** `--stage final` refuses unless:
+    - `selection.json` is complete;
+    - its features, models and thresholds match what the frozen settings
+      rebuild;
+    - it was produced from committed code;
+    - the current code is that same commit, with no uncommitted changes.
+  - **Recorded in the outputs:** the final outputs record the SHA-256 of the
+    `selection.json` they used.

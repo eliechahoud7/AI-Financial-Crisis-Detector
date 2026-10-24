@@ -27,5 +27,6 @@ paths:
   raw_data: "data/raw"
   interim_data: "data/interim"
   processed_data: "data/processed"
+  data_reports: "data/reports"   # generated data-quality reports (ignored by Git)
   models: "artifacts/models"
   reports: "reports"

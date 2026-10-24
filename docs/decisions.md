@@ -600,3 +600,96 @@ if the decision changes.
 - **Next steps:** any further tuning needs a new held-out question set. A
   semantic support check could catch inverted or misattributed claims (v06,
   v10) that a lexical check cannot.
+
+---
+
+## D17. LangGraph workflow over market analysis and document retrieval (Phase F)
+
+- **Date:** 2026-10-24
+- **Decision:** `src/fincrisis/agents/graph.py` builds a LangGraph
+  `StateGraph` that routes a question to the existing components and grounds
+  the explanation in the project documents. `scripts/run_crisis_agent.py`
+  runs it from the command line. LangGraph 1.2.14 is installed in `.venv`;
+  `websockets` went from 17.3 to 16.1.1, which `langgraph-sdk` requires and
+  `yfinance` (>= 13) accepts.
+- **Graph:**
+  - `route_request` sends the question to one of four branches:
+    - `advice` → `refuse_advice`;
+    - `market` → `assess_market`, then `report_error` if a check fails, or
+      `retrieve_context` if it passes;
+    - `distress` → `summarize_distress` → `retrieve_context`;
+    - `documents` → `retrieve_context`.
+  - On the documents branch, `retrieve_context` goes to `report_error` if
+    retrieval fails, to `abstain` if no passage reaches `min_relevance`, and
+    otherwise to `compose_answer`. On the market and distress branches it
+    always goes to `compose_answer`: the figures are reported, followed by the
+    cited context, "No supporting passage was found", or "Document context is
+    unavailable" (with a warning) if retrieval fails.
+  - The trace of visited nodes is returned with every answer.
+- **Routing is deterministic** (keyword rules in `graph.route`), not
+  model-driven, so it is testable and cannot be talked into a different
+  branch:
+  - investment or trading advice ("should I buy…", "do you recommend
+    investing…") is declined without calling any tool;
+  - market words together with "current/now/today/signal/level" go to the
+    market assessment;
+  - distress words together with "results/perform/accuracy" go to the
+    distress results;
+  - everything else goes to the document RAG.
+- **Tools** (`src/fincrisis/agents/tools.py`) reuse the existing code and
+  frozen outputs. They are read-only and refit or re-select nothing.
+  - **`assess_market`:**
+    - checks that the raw snapshot matches its checksums, and that
+      `selection.json` is the one the frozen test evaluation used
+      (`test_metrics.json` records its checksum);
+    - computes features for the latest snapshot date with
+      `market_features.build_features`;
+    - scores that date with the **frozen primary model** at its frozen
+      threshold, and with the saved XGBoost model, loaded only after its
+      checksum matches;
+    - reports the historical percentile of the primary score, the measured
+      test reliability from `test_metrics.json`, and a warning if the
+      snapshot is older than `agent.stale_after_days` (7).
+  - **`distress_summary`:** reports the frozen held-out results of the
+    company-distress baselines and the label caveat. Companies are not
+    scored, because a question cannot supply the 91 required features.
+  - **Documents:** the existing RAG `answer()`, with the default dense
+    retrieval, extractive answers, and optional Ollama generation with
+    grounding checks.
+  - **Market and distress context** (`tools.context_answer`): each branch
+    has a configured list of entries (`agent.context`), each a question plus
+    the document and section to search. For each entry, `answer()` retrieves
+    only chunks in that section (`scope`, dense cosine with the same
+    `min_relevance`) and returns its best sentence. Entries without evidence
+    are skipped, and citations are renumbered. The explanation is therefore
+    deterministic and cites the target definition (D2), the primary-model
+    rule (D13) and the test limitations for the market branch, and the test
+    comparison, calibration and scope caveats for the distress branch, rather
+    than whatever the user's wording retrieves. The entry questions were
+    worded by checking which sentence each one selects in its section; the
+    RAG validation set was not used.
+- **Failures:** nothing is ever replaced by an estimate.
+  - A missing or altered raw snapshot, `selection.json` or model file stops
+    the market branch with an error message (`report_error`). Model files are
+    checked before `joblib.load`. A failure of the secondary XGBoost model
+    also stops the branch, so a partial assessment is never reported.
+  - Altered or missing distress outputs are reported as "unavailable" in the
+    answer, with a warning. Every answer ends with a disclaimer that this is research output,
+  not a forecast or financial advice.
+- **Extractive answer change** (found while testing the workflow):
+  - headings, fenced code blocks and list lead-ins ending in ":" are no
+    longer used as evidence sentences;
+  - a sentence cut by a chunk boundary is skipped: the chunk's last sentence
+    if it stops mid-sentence, and its first sentence (or the first after a
+    code block) if it starts lowercase. Other sentences of the same paragraph
+    are kept. If a chunk boundary cuts a code block, a heuristic decides
+    whether the chunk starts or ends inside it (first fence in the first half
+    of the chunk's lines means it starts inside);
+  - wrapped `>` blockquote lines are rejoined into one paragraph.
+
+  Retrieval is unchanged.
+- **Not evaluated:** no question set measures the workflow's answers. Its
+  tests check routing, every branch, error handling (including runs of the
+  whole workflow on altered copies of the frozen outputs), abstention, and
+  that the tools leave files unchanged. Answer quality is that of the components it reuses
+  (D9, D13 to D16).

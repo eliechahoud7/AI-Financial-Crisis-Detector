@@ -16,15 +16,36 @@ Everything runs locally. No paid APIs, cloud services, Docker, or fine-tuning.
 
 ## Status
 
-Company distress model (UCI Taiwanese Bankruptcy dataset), in progress:
+- **Company distress** (UCI Taiwanese Bankruptcy dataset): download, inspection, preprocessing,
+  baselines and the one-time held-out test are done (`docs/model_card.md`). The meanings of the
+  target labels are unverified (`docs/decisions.md`, D4).
+- **Market stress** (S&P 500 and VIX, 1990–2026): frozen snapshot, dataset, walk-forward
+  validation and the one-time held-out test are done (D10–D13). The primary model is a
+  downside-volatility rule; no model clearly beat it.
+- **Document RAG**: local retrieval with cited extractive answers, optional local LLM
+  generation with grounding checks (D14–D16).
+- **Workflow**: a LangGraph workflow routes questions to the market signal, the distress
+  results, or the documents (D17).
 
-- Download, inspection, and preprocessing: done (`scripts/download_taiwan_bankruptcy.py`,
-  `scripts/inspect_taiwan_bankruptcy.py`, `scripts/preprocess_taiwan_bankruptcy.py`).
-- Baseline models (`scripts/train_distress_baselines.py`): cross-validation and the one-time
-  held-out test evaluation are done. Results, limitations, and artifacts: `docs/model_card.md`.
-- The meanings of the dataset's target labels are unverified (see `docs/decisions.md`, D4).
+Anomaly detection, regime classification, and the dashboard have not started.
 
-Market-stress prediction, anomaly detection, regimes, RAG, and the dashboard have not started.
+## Asking the workflow
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[rag,agent]" --extra-index-url https://download.pytorch.org/whl/cpu
+.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "What is the current market stress level?"
+.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "How well do the bankruptcy models perform?"
+.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "Which VIX value is used for date t?"
+```
+
+The documents must be indexed first (`scripts\build_rag_index.py`, see the RAG section below).
+The market answer reads the local snapshot, so refresh it for a current signal; the answer warns
+when the snapshot is more than 7 days old.
+
+Requests for investment or trading advice are declined. Market and distress answers come from the
+frozen evaluated models and are explained with cited project documents; every answer states that
+it is research output, not a forecast or financial advice. Add `--json` to see the route taken and
+`--llm ollama` to let the local model write document answers.
 
 ## Setup
 

@@ -188,8 +188,41 @@ class TestAnswer(unittest.TestCase):
                       "previous session.", out)
         self.assertIn("xgboost | 0.4871", " ".join(out) + " xgboost | 0.4871")  # short rows are dropped, not merged
         self.assertFalse(any("|---" in s or "**" in s for s in out))
+        # headings are not evidence (D17); a heading never merges into the paragraph below it
         separated = ans.sentences("# A Long Report Title For Testing\nGenerated on a date for this report.\n\n---\n")
-        self.assertEqual(separated, ["A Long Report Title For Testing", "Generated on a date for this report."])
+        self.assertEqual(separated, ["Generated on a date for this report."])
+
+    def test_sentences_skip_fragment_cut_by_chunk_boundary(self):
+        chunk = "A complete first sentence is here.\n\nThe target column `bankrupt` (originally `Bankrupt?`) takes"
+        self.assertEqual(ans.sentences(chunk), ["A complete first sentence is here."])
+        self.assertEqual(ans.sentences("that these models predict confirmed bankruptcy.\n\nA complete second sentence is here."),
+                         ["A complete second sentence is here."])  # chunk starts mid-sentence
+        quote = "> **Label caveat.** The target column `bankrupt` takes\n> the values 0 and 1, which remain unverified.\n"
+        # wrapped blockquote lines form one sentence; "Label caveat." is under 25 characters and dropped
+        self.assertEqual(ans.sentences(quote),
+                         ["The target column `bankrupt` takes the values 0 and 1, which remain unverified."])
+        # only the cut sentence is dropped, not the rest of its paragraph
+        chunk = "y_t = 1 if DD_t <= -0.05 with H = 20. In words: the label is 1 after a 5% fall within 20 sessions."
+        self.assertEqual(ans.sentences(chunk), ["In words: the label is 1 after a 5% fall within 20 sessions."])
+        chunk = "- **Primary model:** the model with the highest pooled average precision. It is recorded in"
+        self.assertEqual(ans.sentences(chunk), ["Primary model: the model with the highest pooled average precision."])
+        # list lead-ins ending in ":" are skipped; fenced code is not evidence
+        self.assertEqual(ans.sentences("- **Two stages** (`scripts/train.py`), as in D9:\n- The first stage runs the CV."),
+                         ["The first stage runs the CV."])
+        chunk = "Decision follows here.\n\n```\nThe label y equals one if this code holds.\n```\n\nAfter the block, text resumes."
+        self.assertEqual(ans.sentences(chunk), ["After the block, text resumes."])
+        # a chunk cut inside a code block: odd fence count, first fence early = chunk starts inside the block
+        chunk = ("y_t = 1 if DD_t <= -0.05\n```\nwith H = 20 sessions. In words: the label marks a 5% fall.\n"
+                 "More prose follows in this paragraph.\nAnd the last line ends.")
+        self.assertEqual(ans.sentences(chunk), ["In words: the label marks a 5% fall.",
+                                                "More prose follows in this paragraph."])
+        # odd fence count, first fence late = chunk ends inside the block
+        chunk = "Intro prose sentence is here.\nSecond line of prose.\nThird line here.\n```\ncode that is not closed"
+        self.assertEqual(ans._units(chunk)[-1], ("code", "code that is not closed"))
+        self.assertEqual(ans.sentences(chunk), ["Intro prose sentence is here."])
+        # only a trailing paragraph is dropped; list items are kept, each as its own unit
+        self.assertEqual(ans.sentences("- A list item that ends without a period\n- The last list item ends properly."),
+                         ["A list item that ends without a period", "The last list item ends properly."])
 
     def test_insufficient_evidence_below_threshold(self):
         result = ans.answer("sourdough bread recipe", self.store, self.emb, 3, 0.99, 2)

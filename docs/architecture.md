@@ -31,8 +31,8 @@ yfinance / UCI dataset
 | Features | `src/fincrisis/features/` | Backward-looking features only (data up to day *t*) |
 | Models | `src/fincrisis/models/` | Training and prediction for the four models |
 | Evaluation | `src/fincrisis/evaluation/` | Chronological splits, metrics, baselines |
-| RAG (later) | `src/fincrisis/rag/` | Document ingestion, embeddings, retrieval with citations |
-| Agents (later) | `src/fincrisis/agents/` | LangGraph workflow that grounds recommendations in retrieved sources |
+| RAG | `src/fincrisis/rag/` | Document ingestion, embeddings, retrieval with citations, optional local LLM |
+| Agents | `src/fincrisis/agents/` | LangGraph workflow routing questions to the market signal, distress results, or documents (D17) |
 | Scripts | `scripts/` | Reproducible command-line pipeline steps |
 | App (later) | `app/` | Streamlit UI; loads saved artifacts, never trains |
 
@@ -50,12 +50,14 @@ yfinance / UCI dataset
 
 Components, in the order they are being built:
 
-1. **Company distress model** (UCI Taiwanese Bankruptcy dataset), in progress:
-   download, inspection, preprocessing, baseline cross-validation, and the
-   one-time held-out test evaluation are done (see `docs/model_card.md`).
-2. Market data and market-stress prediction
-3. Anomaly detection and regime classification
-4. RAG + local LLM recommendations
-5. Streamlit dashboard
+1. **Company distress model** (UCI Taiwanese Bankruptcy dataset): done,
+   including the one-time held-out test (see `docs/model_card.md`).
+2. **Market data and market-stress prediction**: done, including the
+   one-time held-out test (D10–D13).
+3. **RAG + local LLM**: done (D14–D16).
+4. **LangGraph workflow** connecting the market signal, the distress
+   results, and the documents: done (D17).
+5. Anomaly detection and regime classification
+6. Streamlit dashboard
 
 Folders for later milestones are created when their milestone starts.

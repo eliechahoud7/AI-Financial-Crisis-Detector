@@ -106,6 +106,25 @@ rag:
       num_ctx: 4096
       num_predict: 256
 
+# LangGraph workflow over the market, distress and document components (see docs/decisions.md, D17)
+agent:
+  stale_after_days: 7               # warn if the market snapshot is older than this
+  context:                          # cited explanation for each branch: one best sentence per entry,
+    market:                         # retrieved by similarity within that entry's source and section
+      - {question: "When does the index close at least 5% below its highest close?",
+         source: "docs/decisions.md", section: "D2. Market-stress target definition"}
+      - {question: "Which model has the highest pooled walk-forward average precision?",
+         source: "docs/decisions.md", section: "D13. Market-stress models"}
+      - {question: "Will these results hold in the future?",
+         source: "data/reports/market_stress/models/final_report.md", section: "> Limitations"}
+    distress:
+      - {question: "Do the test results distinguish logistic regression from XGBoost?",
+         source: "docs/model_card.md", section: "7. Held-out test results"}
+      - {question: "Can the distress model scores be read as probabilities?",
+         source: "docs/model_card.md", section: "9. Uncertainty"}
+      - {question: "Which uses of the distress models are out of scope?",
+         source: "docs/model_card.md", section: "11. Limitations"}
+
 paths:
   raw_data: "data/raw"
   interim_data: "data/interim"

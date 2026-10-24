@@ -22,6 +22,21 @@ INSUFFICIENT = "The indexed documents do not contain enough evidence to answer t
 CITATION = re.compile(r"\[(\d+)\]")
 
 
+def in_scope(metadata: dict, scope: list[dict]) -> bool:
+    """True if the chunk's source matches a scope entry and its section contains that entry's text."""
+    return any(metadata["source"] == s["source"] and s["section"] in metadata["section"] for s in scope)
+
+
+def retrieve_scoped(store, question: str, k: int, scope: list[dict]) -> list[dict]:
+    """Dense retrieval restricted to chunks in `scope` (D17); scores are dense cosines."""
+    scores = store.cosine_scores(question)
+    allowed = [i for i, d in enumerate(store.documents) if in_scope(d.metadata, scope)]
+    order = sorted(allowed, key=lambda i: -scores[i])[:k]
+    return [{"rank": r, "score": float(scores[i]), "source": store.documents[i].metadata["source"],
+             "section": store.documents[i].metadata["section"], "chunk_id": store.documents[i].metadata["chunk_id"],
+             "text": store.documents[i].page_content} for r, i in enumerate(order, start=1)]
+
+
 def retrieve(store, question: str, k: int) -> list[dict]:
     hits = store.similarity_search_with_score(question, k=k)
     return [{"rank": i + 1, "score": float(score), "source": doc.metadata["source"], "section": doc.metadata["section"],
@@ -32,42 +47,80 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+")
 TABLE_SEPARATOR = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
 
-def _units(text: str) -> list[str]:
-    """Paragraphs with wrapped lines rejoined; list items, headings and table rows kept separate."""
-    units, current = [], []
+def _units(text: str) -> list[tuple[str, str]]:
+    """(kind, text) units: paragraphs with wrapped lines rejoined, plus list items, headings, table rows and code.
 
-    def flush():
+    A code fence always ends the current unit, and lines between an opening
+    and a closing fence form one "code" unit. A chunk boundary can cut a code
+    block, leaving an odd number of fences; the chunk is then assumed to start
+    inside the block if its first fence is in the first half of its lines
+    (otherwise, to end inside it). This is a heuristic.
+    """
+    units, current = [], []
+    lines = text.splitlines()
+    fences = [i for i, line in enumerate(lines) if line.strip().startswith("```")]
+    in_code = len(fences) % 2 == 1 and fences[0] < len(lines) / 2
+
+    def flush(kind="text"):
         if current:
-            units.append(" ".join(current))
+            units.append((kind, " ".join(current)))
             current.clear()
-    for line in text.splitlines():
+    for line in lines:
         stripped = line.strip()
-        if not stripped or re.fullmatch(r"[-*_]{3,}", stripped):
+        if stripped.startswith("```"):
+            flush("code" if in_code else "text")
+            in_code = not in_code
+        elif in_code:
+            current.append(stripped)
+        elif not stripped or re.fullmatch(r"[-*_]{3,}", stripped):
             flush()
         elif stripped.startswith("|"):
             flush()
             if not TABLE_SEPARATOR.match(stripped):
-                units.append(" | ".join(cell.strip() for cell in stripped.strip("|").split("|")))
+                units.append(("table", " | ".join(cell.strip() for cell in stripped.strip("|").split("|"))))
         elif stripped.startswith("#"):
             flush()
-            units.append(stripped.lstrip("# ").strip())
-        elif LIST_ITEM.match(line) or stripped.startswith(">"):
+            units.append(("heading", stripped.lstrip("# ").strip()))
+        elif stripped.startswith(">"):  # blockquote: wrapped lines continue the same paragraph
+            quoted = stripped.lstrip("> ").strip()
+            if quoted:
+                current.append(quoted)
+            else:
+                flush()
+        elif LIST_ITEM.match(line):
             flush()
             current.append(LIST_ITEM.sub("", stripped).lstrip("#> ").strip())
         else:
             current.append(stripped)
-    flush()
+    flush("code" if in_code else "text")
     return units
 
 
+ENDS_SENTENCE = re.compile(r"""[.!?:;)\]`"'*]$""")
+
+
 def sentences(text: str) -> list[str]:
-    """Readable sentences from a Markdown chunk (markup removed), at least 25 characters long."""
+    """Readable evidence sentences from a Markdown chunk (markup removed), at least 25 characters long.
+
+    Headings are not evidence and are skipped, as are list lead-ins ending in
+    ":", and fenced code. A sentence cut by a chunk boundary or a code block is
+    skipped: the first sentence of the chunk, or the first after a code block,
+    if it starts lowercase, and the last sentence of the chunk if it stops
+    mid-sentence. Other sentences in the same paragraph are kept (D17).
+    """
+    units = _units(text)
     out = []
-    for unit in _units(text):
-        unit = re.sub(r"\*\*|__", "", unit)
-        for part in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9`\"'(\[])", unit):
-            part = part.strip()
-            if len(part) >= 25 and any(c.isalpha() for c in part):
+    for i, (kind, unit) in enumerate(units):
+        if kind in ("heading", "code"):
+            continue
+        parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9`\"'(\[])", re.sub(r"\*\*|__", "", unit))]
+        continues = i == 0 or units[i - 1][0] == "code"  # chunk start, or text resuming after a code block
+        if kind == "text" and continues and parts and parts[0][:1].islower():
+            parts = parts[1:]
+        if kind == "text" and i == len(units) - 1 and parts and not ENDS_SENTENCE.search(parts[-1]):
+            parts = parts[:-1]
+        for part in parts:
+            if len(part) >= 25 and any(c.isalpha() for c in part) and not part.endswith(":"):
                 out.append(part)
     return out
 
@@ -94,18 +147,23 @@ def extractive_answer(question: str, evidence: list[dict], embeddings, max_sente
 
 
 def answer(question: str, store, embeddings, top_k: int, min_relevance: float, max_sentences: int,
-           generator=None, min_support: float = 0.6, retriever=None) -> dict:
+           generator=None, min_support: float = 0.6, retriever=None, scope: list[dict] | None = None) -> dict:
     """Retrieve, then answer extractively or (if `generator` is given) generatively with grounding checks.
 
+    With a `scope` (D17), dense retrieval is restricted to chunks in that scope.
     With a `retriever` (D16), evidence is its top-k ranking and the question is
     answered only if the best dense cosine over all chunks reaches
-    `min_relevance`. Without one, dense retrieval is used and passages below the
-    threshold are dropped. A generated answer is used only if it passes
+    `min_relevance`. Otherwise dense retrieval is used. In both dense cases,
+    passages below the threshold are dropped. A generated answer is used only if it passes
     `check_grounding`; otherwise the extractive answer is returned with a warning.
     If the model says the evidence is insufficient, or gives a non-answer, the
     result is "insufficient_evidence".
     """
-    if retriever is not None:
+    if scope is not None:
+        evidence = retrieve_scoped(store, question, top_k, scope)
+        top_score = evidence[0]["score"] if evidence else None
+        usable = [e for e in evidence if e["score"] >= min_relevance]
+    elif retriever is not None:
         evidence = retriever.search(question, top_k)
         top_score = retriever.max_dense_score(question)
         usable = evidence if top_score >= min_relevance else []

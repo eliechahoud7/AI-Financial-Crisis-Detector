@@ -107,7 +107,7 @@ def verify_all(root: Path = loaders.PROJECT_ROOT, settings: dict | None = None) 
             + rag_index_checks(root, settings["rag"]))
 
 
-def summary(checks: list[Check]) -> str:
+def summary(checks: list[Check], noun: str = "integrity check") -> str:
     lines, groups = [], dict.fromkeys(c.group for c in checks)
     for group in groups:
         rows = [c for c in checks if c.group == group]
@@ -115,5 +115,5 @@ def summary(checks: list[Check]) -> str:
         lines.append(f"{group}: {len(rows) - len(bad)}/{len(rows)} ok")
         lines += [f"  {c.status.upper()}: {c.name}" + (f" ({c.detail})" if c.detail else "") for c in bad]
     failed = sum(not c.ok for c in checks)
-    lines.append("All integrity checks passed." if not failed else f"{failed} integrity check(s) failed.")
+    lines.append(f"All {noun}s passed." if not failed else f"{failed} {noun}(s) failed.")
     return "\n".join(lines)

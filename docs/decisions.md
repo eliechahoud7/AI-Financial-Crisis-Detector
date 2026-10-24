@@ -911,3 +911,33 @@ if the decision changes.
   the manifest, so every checkout has the recorded bytes.
 - **Tests:** `tests/test_integrity.py` alters, removes or corrupts each kind
   of file on temporary copies and checks that the verifier reports it.
+
+---
+
+## D23. Reproducibility (drift) checks (Phase H, step 2)
+
+- **Date:** 2026-10-25
+- **Problem:** the dashboard and the workflow recompute features and scores
+  with today's code. If the feature or target code, the saved models' behaviour
+  or a library changed, they would silently diverge from what was evaluated.
+- **Decision:** `src/fincrisis/qa/drift.py`, run by
+  `scripts/check_reproducibility.py` (exit code 1 on any difference),
+  recomputes values that the frozen runs saved and compares them:
+  - the 16 market features and the target, rebuilt from the frozen snapshot,
+    against `dataset.csv` (exact);
+  - the saved market-stress models and the rule scores on the 2,950 held-out
+    test days against `test_predictions.csv`;
+  - the saved company-distress models on the 1,364 held-out test companies
+    against their `test_predictions.csv` (same rows and labels, in order);
+  - the latest-day signal from `assess_market` against the same computation
+    done from the frozen pieces directly, including the threshold and signal.
+- **Tolerance:** model scores within 1e-6. The prediction files store float32
+  outputs as text, so XGBoost reproduces them to about 3e-8; anything larger is
+  drift. Features and the target must match exactly.
+- **Not an evaluation:** nothing is fitted, and no metric is computed. The test
+  rows are re-scored only to compare scores with the saved ones; the models
+  are loaded only after their checksum check.
+- **Tests:** `tests/test_drift.py` simulates each kind of drift in memory (a
+  feature changed by one part in 10^12, a changed target threshold, models
+  shifted by 1e-4, reordered test rows, a diverging latest-day score) and
+  checks that it is reported, and that float32-sized differences are not.

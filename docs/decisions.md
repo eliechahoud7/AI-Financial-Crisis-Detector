@@ -1685,6 +1685,27 @@ if the decision changes.
   - **Expected yield:** at about 2.6 episodes a year, one year gives too few
     episodes to compare models. A forward period is suitable for
     monitoring, not for model selection, unless it runs for many years.
+- **Recommendations from the audit analysis** (added 2026-10-26). These are
+  the minimum changes that would address the open questions. They are
+  **not approved and not applied**. Each needs the matching decision below,
+  and none authorizes training.
+  - **Threshold transfer:** for fitted models, either derive the final
+    model's threshold from out-of-fold predictions inside its own training
+    data (nested), or report fitted-model threshold metrics as not
+    transferable and rely on ranking metrics only. The rule baselines need
+    no change.
+  - **Aggregation:** before any future comparison, declare one primary
+    selection metric (the mean of yearly average precision, or the pooled
+    value) and always report the other. The yearly mean is less affected
+    by score offsets between folds.
+  - **Dependence:** keep the block bootstrap. Add a 250-session block
+    sensitivity check, and report episode counts with every metric.
+    Weighting training rows by label uniqueness is a training-time option,
+    not a leakage fix.
+  - **Historical results:** keep the D13 results as historical results,
+    labelled as such.
+  - **Forward monitoring:** if wanted, run it under a protocol fixed in
+    advance, with the models fixed.
 - **Decisions still required** (not made here):
   - whether to formally approve Phase B and the D13 protocol on this
     evidence;

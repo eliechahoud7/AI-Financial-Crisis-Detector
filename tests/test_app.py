@@ -7,6 +7,7 @@ cached embedding model. Missing-artifact tests point the dashboard at an empty
 data folder.
 """
 
+import json
 import sys
 import tempfile
 import tomllib
@@ -113,6 +114,14 @@ class TestPagesOnFrozenOutputs(AppCase):
         for name, minimum in (("market_dashboard", 2), ("market_stress", 6), ("company_distress", 5)):
             with self.subTest(page=name):
                 self.assertGreaterEqual(len(run_page(name).get("plotly_chart")), minimum)
+
+    def test_market_dashboard_charts_hide_the_zoom_and_pan_buttons(self):
+        hidden = ["zoom2d", "pan2d", "autoScale2d", "resetScale2d"]
+        for name, expected in (("market_dashboard", hidden), ("market_stress", None)):
+            with self.subTest(page=name):
+                for element in run_page(name).get("plotly_chart"):
+                    config = json.loads(element.proto.config or "{}")
+                    self.assertEqual(config.get("modeBarButtonsToRemove"), expected)
 
     def test_distress_page_shows_the_label_caveat_and_no_scoring_form(self):
         at = run_page("company_distress")

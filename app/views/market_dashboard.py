@@ -24,14 +24,17 @@ if snap is not None:
         cols[2].metric("Below 252-session high", f"{last['drawdown_252']:.1%}")
         cols[3].metric("20-day downside volatility", f"{last['downside_vol_20']:.1%}", help="Annualized (D12).")
 
+    # Hide the Zoom, Pan, Autoscale and Reset axes buttons; hover tooltips are unaffected.
+    toolbar = {"modeBarButtonsToRemove": ["zoom2d", "pan2d", "autoScale2d", "resetScale2d"]}
     closes = pd.DataFrame({"S&P 500 close": spx, "VIX close": vix}).rename_axis("date").reset_index()
-    ui.figure(charts.price_and_vix(snap), table=closes.sort_values("date", ascending=False), key="price")
+    ui.figure(charts.price_and_vix(snap), table=closes.sort_values("date", ascending=False), key="price",
+              config=toolbar)
     if features is not None:
         table = (features[["drawdown_252", "downside_vol_20"]].dropna().rename_axis("date").reset_index()
                  .rename(columns={"drawdown_252": "drawdown from 252-session high",
                                   "downside_vol_20": "20-day downside volatility"}))
         ui.chart(charts.drawdown_and_volatility, features, table=table.sort_values("date", ascending=False),
-                 key="drawdown")
+                 key="drawdown", config=toolbar)
 
     with st.expander("Snapshot details"):
         st.markdown(f"- Source: {snap['source']}\n- Downloaded: {snap['downloaded_at_utc']} (UTC)\n"

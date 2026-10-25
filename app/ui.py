@@ -128,9 +128,10 @@ def dark_mode() -> bool:
         return False
 
 
-def figure(fig, table: pd.DataFrame | None = None, key: str | None = None, caption: str | None = None) -> None:
+def figure(fig, table: pd.DataFrame | None = None, key: str | None = None, caption: str | None = None,
+           config: dict | None = None) -> None:
     """Show a chart in the current theme, with an optional table view of the same numbers."""
-    st.plotly_chart(charts.themed(fig, dark_mode()), theme=None, key=key, width="stretch")
+    st.plotly_chart(charts.themed(fig, dark_mode()), theme=None, key=key, width="stretch", config=config)
     if caption:
         st.caption(caption)
     if table is not None:
@@ -139,9 +140,9 @@ def figure(fig, table: pd.DataFrame | None = None, key: str | None = None, capti
 
 
 def chart(builder, *args, table: pd.DataFrame | None = None, key: str | None = None, caption: str | None = None,
-          **kwargs) -> None:
+          config: dict | None = None, **kwargs) -> None:
     """Build a chart with `charts.build_or_message`, so missing inputs show a message instead of an error."""
-    figure(charts.build_or_message(builder, *args, **kwargs), table=table, key=key, caption=caption)
+    figure(charts.build_or_message(builder, *args, **kwargs), table=table, key=key, caption=caption, config=config)
 
 
 LOCAL_ADDRESSES = ("localhost", "127.0.0.1", "::1")

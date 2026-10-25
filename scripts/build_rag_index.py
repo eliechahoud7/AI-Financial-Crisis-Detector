@@ -3,7 +3,7 @@
 Usage:
     python scripts/build_rag_index.py                    # stop if an index exists
     python scripts/build_rag_index.py --force            # rebuild
-    python scripts/build_rag_index.py --allow-download   # first run: download the embedding model once
+    python scripts/build_rag_index.py --allow-download   # first run: download the embedding and reranker models once
 
 Sources are the glob patterns in config/settings.yaml (`rag.sources`). Each
 chunk keeps its source path and section heading for citations. The index is
@@ -45,7 +45,7 @@ def build(settings: dict, root: Path, embeddings, force: bool) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--force", action="store_true", help="rebuild an existing index")
-    parser.add_argument("--allow-download", action="store_true", help="download the embedding model if not cached")
+    parser.add_argument("--allow-download", action="store_true", help="download the embedding and reranker models if not cached")
     args = parser.parse_args()
     settings = pipeline.load_rag_settings()
     index_dir = pipeline.PROJECT_ROOT / settings["index_dir"]
@@ -54,6 +54,8 @@ def main() -> int:
         return 1
     try:
         embeddings = pipeline.make_embeddings(settings["embedding_model"], args.allow_download)
+        if args.allow_download and settings["retrieval"].get("rerank_model"):  # cache the reranker too (D31)
+            pipeline.make_reranker(settings["retrieval"]["rerank_model"], allow_download=True)
         manifest = build(settings, pipeline.PROJECT_ROOT, embeddings, args.force)
     except (RuntimeError, idx.RAGIndexError, FileExistsError, ValueError) as error:
         print(f"Failed: {error}\nNothing was written.")

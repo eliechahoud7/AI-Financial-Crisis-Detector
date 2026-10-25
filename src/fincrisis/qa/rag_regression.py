@@ -54,7 +54,7 @@ def development_questions(rag: dict, root: Path = loaders.PROJECT_ROOT) -> list[
 def retrieval(store, rag: dict, questions: list[dict]) -> dict:
     """Per-mode summary metrics and per-question first-relevant ranks on the development set."""
     out = {}
-    for mode in ("dense", "lexical", "hybrid"):
+    for mode in pipeline.retrieval_modes(rag):
         retriever = pipeline.make_retriever(store, rag, mode)
         result = ev.evaluate(retriever.search, questions, rag["eval_k"], rag["min_relevance"], retriever.max_dense_score)
         out[mode] = {"summary": {k: round(v, 6) for k, v in result["summary"].items() if isinstance(v, float)},
@@ -65,7 +65,12 @@ def retrieval(store, rag: dict, questions: list[dict]) -> dict:
 def compare_retrieval(current: dict, baseline: dict, configured: str) -> list[Check]:
     checks = []
     for mode, now in current.items():
-        then = baseline["modes"][mode]
+        then = baseline["modes"].get(mode)
+        if then is None:  # a mode added since the baseline was recorded: review it, then re-record with --update
+            status = "mismatch" if mode == configured else "ok"
+            checks.append(Check(f"rag retrieval ({mode}{', configured' if mode == configured else ''})",
+                                "baseline", status, "no baseline recorded for this mode"))
+            continue
         moved = sorted((q, then["ranks"].get(q), r) for q, r in now["ranks"].items() if then["ranks"].get(q) != r)
         detail = "rank changes (question, baseline, now): " + (", ".join(map(str, moved)) or "none")
         for metric, value in now["summary"].items():

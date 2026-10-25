@@ -88,8 +88,10 @@ rag:
     min_tokens: 64                  # a shorter trailing chunk or near-empty parent section is merged (fixed, not tuned)
   chunk_size: 800                   # characters (characters method only)
   chunk_overlap: 120
-  retrieval:                        # D16: hybrid and headings did not validate, so the default is the original dense search
-    mode: "dense"                   # dense (default) | lexical | hybrid (reciprocal rank fusion of dense and TF-IDF)
+  retrieval:                        # D31: dense candidates re-ordered by a cross-encoder (D16 kept plain dense)
+    mode: "rerank"                  # rerank (default) | dense | lexical | hybrid (reciprocal rank fusion of dense and TF-IDF)
+    rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"   # D31: Apache-2.0, CPU; re-orders the dense candidates
+    rerank_candidates: 20           # dense passages the reranker reads (fixed, not tuned)
     embed_section_headings: false   # true embeds "section path + chunk text"
     rrf_k: 60
   top_k: 4

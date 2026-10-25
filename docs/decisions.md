@@ -998,8 +998,8 @@ if the decision changes.
   0.615 to 0.577 and MRR from 0.362 to 0.344 (each one question out of 26;
   q01 and q12 left the top five, q19 entered it, q08 and q22 fell one place).
   Abstention is unchanged. The first run of this check then caught the
-  next step: adding this record moved q19 ("Which local language model is
-  planned...") from fifth to sixth place, behind a D24 passage in a near-tie
+  next step: adding this record moved development question q19 from fifth
+  to sixth place, behind a D24 passage in a near-tie
   (cosine 0.293 against 0.291), so hit@5 fell to 0.538 and MRR to 0.337.
   That is corpus growth, not a setting change; it was reviewed and accepted.
   Nothing was tuned in response.
@@ -1190,9 +1190,9 @@ if the decision changes.
   text, and the toolbar setting on every chart. `tests/test_dashboard.py`
   covers the summary's wording and missing inputs; `tests/test_charts.py`
   covers the event shading, labels and dates.
-- **RAG reference answers (D25):** adding this record changed one extractive
-  reference answer ("How many trading days ahead does the market-stress
-  label look?"). Its two sentences from D2 and their citation are
+- **RAG reference answers (D25):** adding this record changed one of the
+  three extractive reference answers in `config/qa/reference_answers.json`
+  (the one citing D2). Its two sentences from D2 and their citation are
   unchanged; its off-topic sentence from D20 is replaced by an off-topic one
   from this record. The configured (dense) retriever's metrics did not
   change. The lexical retriever, which is only reported, moved slightly since
@@ -1270,8 +1270,8 @@ if the decision changes.
   - **Reported-only retrievers:** fell. Lexical hit@1 went from 0.346 to
     0.308 and MRR from 0.515 to 0.501. Hybrid hit@3 went from 0.692 to 0.615
     and hit@5 from 0.808 to 0.731.
-  - **Audit probes:** the passage defining the market-stress label rose from
-    ranks 44 / 5 / 13 to 4 / 1 / 2 for three phrasings. The 16-feature table
+  - **Audit probes:** the D2 passage rose from ranks 44 / 5 / 13 to
+    4 / 1 / 2 for the three probes that need it. The 16-feature table
     and the numbers-only rows of the test-results table still rank poorly;
     that is left to retrieval (a later step).
 - **Regression found and fixed (lead-in rule):**
@@ -1319,3 +1319,78 @@ if the decision changes.
   `tests/test_agent.py` checks that the workflow's D13 explanation states
   the selection rule: the primary model has the highest pooled walk-forward
   average precision. It checks the meaning, not exact wording.
+
+---
+
+## D31. Wider retrieval with a cross-encoder reranker
+
+- **Date:** 2026-10-25
+- **Problem:** after D30, the passage that answers a question was often
+  ranked 5th to 15th by dense search, below passages that only share its
+  topic. Only the top 4 are used.
+- **Decision:** retrieval mode `rerank` (`rag.retrieval.mode`), now the
+  default:
+  - dense search returns the top `rerank_candidates` (20, fixed before
+    measuring);
+  - a local cross-encoder, `cross-encoder/ms-marco-MiniLM-L-6-v2`, reads the
+    question with each candidate and re-orders them; the top `top_k` (4) are
+    the evidence;
+  - the reranker reads each passage after its citation location
+    (`source - section path`). Without it, the held-out test and validation
+    reports, whose tables have the same layout, could not be told apart:
+    text-only reranking cited a validation row for a test-set question.
+- **Unchanged:**
+  - the refusal gate is still the best dense cosine over all chunks against
+    `min_relevance` (0.30), so refusals on the development set are
+    unchanged;
+  - as in the D16 hybrid mode, passages below 0.30 are no longer dropped
+    one by one once the gate is passed;
+  - `top_k`, sentence selection, the prompt, the grounding checks, the
+    index, and the workflow's section-scoped context (D17), which stays
+    dense.
+- **Model:** Apache-2.0, 22.7M parameters, CPU. It was trained on MS MARCO,
+  like the embedding model. It is loaded from the local cache only;
+  `scripts/build_rag_index.py --allow-download` caches it once. If it is
+  missing, the RAG page and the workflow report a clear error.
+- **Results (development set only; the validation set was not used):**
+
+  | Mode | hit@1 | hit@3 | hit@5 | MRR | Refused (unanswerable) |
+  |---|---|---|---|---|---|
+  | dense (D30) | 0.269 | 0.577 | 0.654 | 0.428 | 0.500 |
+  | rerank, passage text only | 0.385 | 0.538 | 0.731 | 0.497 | 0.500 |
+  | rerank with source and section (adopted) | 0.423 | 0.692 | 0.846 | 0.573 | 0.500 |
+  | the same, after the records fix below | 0.462 | 0.731 | 0.846 | 0.596 | 0.500 |
+
+  The section variant was the only variant tried after the text-only run,
+  chosen for the reason above. The audit's model-comparison questions now
+  cite the held-out test rows; the 16-feature list and the test results
+  table are still not retrieved. When the right passage ranks first, the
+  answer can still quote sentences from the other evidence passages: that
+  is sentence selection, the next planned step.
+- **Records quoting evaluation questions (found and fixed):**
+  - **Problem:** D25, D29 and D30 quoted or paraphrased development and
+    reference questions while discussing the RAG's own evaluation. The
+    reranker ranked those passages highly for exactly those questions, so a
+    reference answer started with an off-topic sentence about the
+    evaluation. This breaks the existing rule that the RAG's own reports are
+    not indexed because they quote the evaluation questions.
+  - **Rule:** indexed documents refer to evaluation questions by id (for
+    example q19) or by the decision they concern, and do not quote them.
+    The README is exempt: D25 takes reference questions from its examples.
+  - **Changes:** the three passages in D25, D29 and D30 were reworded on
+    2026-10-25. Their facts are unchanged.
+  - **Test:** `tests/test_rag_regression.py` fails if any other indexed
+    document contains the first six words of a development or reference
+    question. A paraphrase is not caught, so the rule also applies when
+    writing records.
+- **Caution:** like D16, these gains are measured on the development set,
+  which has been used to diagnose the system. They should be confirmed on a
+  new held-out question set before further tuning.
+- **Tests:** `tests/test_rerank.py` covers:
+  - candidates are the dense top, re-ordered by the reranker;
+  - the reranker reads source and section;
+  - scores stay dense cosines, and a high rerank score cannot pass the gate;
+  - invalid settings are refused, and a missing model gives a clear error;
+  - the evaluation modes, and a configured mode without a baseline must be
+    reviewed;
+  - the real model ranks a relevant passage above an unrelated one.

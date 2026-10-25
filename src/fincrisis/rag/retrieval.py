@@ -5,22 +5,37 @@
   when the index is loaded; nothing extra is stored.
 - hybrid: reciprocal rank fusion (RRF) of the dense and lexical rankings,
   score = sum over rankings of 1 / (rrf_k + rank).
+- rerank (D31): the top `candidates` of the dense ranking, re-ordered by a
+  cross-encoder that reads the question and each passage (with its source
+  and section) together.
 
 Every hit carries its dense cosine as "score", whatever the ranking method,
 so the relevance threshold for abstaining keeps the same meaning (D14).
 """
 
+from typing import Callable
+
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-MODES = ("dense", "lexical", "hybrid")
+MODES = ("dense", "lexical", "hybrid", "rerank")
+
+
+def rerank_text(document) -> str:
+    """What the reranker reads: the citation location, then the passage. Without it, rows of the held-out test and
+    of the validation report (same tables, different numbers) cannot be told apart."""
+    return f"{document.metadata.get('source', '')} - {document.metadata.get('section', '')}\n{document.page_content}"
 
 
 class Retriever:
-    def __init__(self, store, mode: str = "dense", rrf_k: int = 60, include_section: bool = True):
+    def __init__(self, store, mode: str = "dense", rrf_k: int = 60, include_section: bool = True,
+                 reranker: Callable[[str, list[str]], list[float]] | None = None, candidates: int = 20):
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
+        if mode == "rerank" and (reranker is None or candidates < 1):
+            raise ValueError("rerank mode needs a reranker and at least one candidate")
         self.store, self.mode, self.rrf_k = store, mode, rrf_k
+        self.reranker, self.candidates = reranker, candidates
         texts = [(f"{d.metadata.get('section', '')}\n" if include_section else "") + d.page_content
                  for d in store.documents]
         self.vectorizer = TfidfVectorizer(sublinear_tf=True, stop_words="english")
@@ -35,6 +50,10 @@ class Retriever:
             ranking = np.argsort(-dense, kind="stable")
         elif self.mode == "lexical":
             ranking = np.argsort(-self.lexical_scores(question), kind="stable")
+        elif self.mode == "rerank":
+            pool = np.argsort(-dense, kind="stable")[:max(k, self.candidates)]
+            relevance = np.asarray(self.reranker(question, [rerank_text(self.store.documents[i]) for i in pool]))
+            ranking = pool[np.argsort(-relevance, kind="stable")]
         else:
             fused = np.zeros(len(dense))
             for scores in (dense, self.lexical_scores(question)):

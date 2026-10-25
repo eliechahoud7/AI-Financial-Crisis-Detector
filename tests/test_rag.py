@@ -386,7 +386,7 @@ class TestRetrievalImprovements(unittest.TestCase):
         self.assertEqual(pipeline.make_retriever(store, dense, "dense").mode, "dense")  # explicit mode: evaluation
         self.assertEqual(pipeline.make_retriever(store, {"retrieval": {"mode": "hybrid", "rrf_k": 60}}).mode, "hybrid")
         project = pipeline.load_rag_settings()["retrieval"]
-        self.assertEqual((project["mode"], project["embed_section_headings"]), ("dense", False))
+        self.assertEqual((project["mode"], project["embed_section_headings"]), ("rerank", False))  # D31 (D16: dense)
 
     def test_open_store_rejects_heading_setting_mismatch(self):
         root = Path(self.tmp.name)

@@ -34,6 +34,27 @@ def make_embeddings(model_name: str, allow_download: bool = False):
                            "scripts/build_rag_index.py --allow-download.") from error
 
 
+def make_reranker(model_name: str, allow_download: bool = False):
+    """A local cross-encoder as `reranker(question, passages) -> scores` (D31); loaded from the cache unless allowed."""
+    from sentence_transformers import CrossEncoder
+    try:
+        model = CrossEncoder(model_name, device="cpu", local_files_only=not allow_download)
+    except (OSError, ValueError) as error:
+        if allow_download:
+            raise
+        raise RuntimeError(f"Reranker model {model_name} is not in the local cache. Download it once with "
+                           "scripts/build_rag_index.py --allow-download.") from error
+
+    def rerank(question: str, passages: list[str]) -> list[float]:
+        return [float(s) for s in model.predict([(question, p) for p in passages], show_progress_bar=False)]
+    return rerank
+
+
+def retrieval_modes(settings: dict) -> tuple[str, ...]:
+    """The retrieval modes to evaluate; rerank only when a reranker model is configured."""
+    return ("dense", "lexical", "hybrid") + (("rerank",) if settings["retrieval"].get("rerank_model") else ())
+
+
 def model_revision(model_name: str) -> str | None:
     """Commit hash of the cached model snapshot, if it can be determined."""
     try:
@@ -107,7 +128,11 @@ def make_retriever(store, settings: dict, mode: str | None = None):
     r = settings["retrieval"]
     if mode is None and r["mode"] == "dense":
         return None
-    return Retriever(store, mode or r["mode"], r["rrf_k"])
+    mode = mode or r["mode"]
+    if mode != "rerank":
+        return Retriever(store, mode, r["rrf_k"])
+    return Retriever(store, mode, r["rrf_k"], reranker=make_reranker(r["rerank_model"]),
+                     candidates=r["rerank_candidates"])
 
 
 def versions() -> dict:

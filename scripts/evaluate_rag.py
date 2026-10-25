@@ -108,7 +108,7 @@ def main() -> int:
         "retrievers": {},
         "versions": pipeline.versions(),
     }
-    for mode in ("dense", "lexical", "hybrid"):
+    for mode in pipeline.retrieval_modes(settings):
         retriever = pipeline.make_retriever(store, settings, mode)
         result["retrievers"][mode] = ev.evaluate(retriever.search, questions, ks, threshold, retriever.max_dense_score)
     out_dir.mkdir(parents=True, exist_ok=True)

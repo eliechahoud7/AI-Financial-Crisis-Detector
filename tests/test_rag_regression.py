@@ -6,6 +6,7 @@ The validation set is never evaluated; one test confirms it is refused.
 """
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ from pathlib import Path
 from fincrisis.dashboard import loaders as ld
 from fincrisis.qa import rag_regression as rr
 from fincrisis.qa import validation_guard as guard
+from fincrisis.rag import documents as docs
 from tests.test_rag import MODEL, model_cached
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +72,31 @@ class TestDevelopmentSetOnly(unittest.TestCase):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         for question in rr.ANSWER_QUESTIONS + rr.WORKFLOW_QUESTIONS:
             self.assertTrue(question in development or question in readme, question)
+
+    def test_indexed_records_do_not_quote_evaluation_questions(self):
+        """Regression (D31): records quoting evaluation questions were retrieved for those questions.
+
+        Like the RAG's own reports (excluded from the index), no indexed document
+        may quote a development or reference question; records refer to them by
+        id. The README is exempt: it is where the reference questions come from
+        (D25). A question is matched on its first six words, so a partial quote
+        is caught too.
+        """
+        rag = SETTINGS["rag"]
+        questions = {q["question"] for q in rr.development_questions(rag)} | set(rr.ANSWER_QUESTIONS + rr.WORKFLOW_QUESTIONS)
+        for document in docs.load_documents(docs.discover_sources(PROJECT_ROOT, rag["sources"], rag["exclude"]), PROJECT_ROOT):
+            if document.metadata["source"] != "README.md":
+                self.assertEqual(quoted_questions(document.page_content, questions), [], document.metadata["source"])
+
+
+def words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9_-]+", text.lower())
+
+
+def quoted_questions(text: str, questions: set[str]) -> list[str]:
+    """The questions whose first six words occur in `text`, ignoring case and punctuation."""
+    body = " ".join(words(text))
+    return sorted(q for q in questions if " ".join(words(q)[:6]) in body)
 
 
 class TestUpdate(unittest.TestCase):

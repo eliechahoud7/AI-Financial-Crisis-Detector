@@ -132,7 +132,7 @@ found, the reply says the evidence is insufficient.
 # One-time: install the RAG dependencies (CPU-only PyTorch)
 .\.venv\Scripts\python.exe -m pip install -e ".[rag]" --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Build the index (the first run downloads the embedding model once)
+# Build the index (the first run downloads the embedding and reranker models once)
 .\.venv\Scripts\python.exe -B scripts\build_rag_index.py --allow-download
 
 # Ask a question, and evaluate retrieval quality

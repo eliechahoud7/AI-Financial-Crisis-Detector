@@ -9,7 +9,7 @@ from fincrisis.dashboard import charts, disclosures
 snap = ui.page_header("Market Dashboard",
                       "Explore historical S&P 500 prices and market volatility, along with indicators used by "
                       "our AI models to analyze market stress.",
-                      research_notice=False)
+                      research_notice=False, snapshot_notice=False)
 
 if snap is not None:
     spx, vix = snap["spx"], snap["vix"]
@@ -47,10 +47,6 @@ if snap is not None:
         ui.chart(charts.drawdown_and_volatility, features, table=table.sort_values("date", ascending=False),
                  key="drawdown", config=toolbar)
 
-    with st.expander("Snapshot details"):
-        st.markdown(f"- Source: {snap['source']}\n- Downloaded: {snap['downloaded_at_utc']} (UTC)\n"
-                    f"- Last completed trading day in both series: {snap['as_of']}")
-        st.dataframe(pd.DataFrame(snap["series"]).T, width="stretch")
     ui.limitations(disclosures.market_data_limitations(snap))
 else:
     ui.limitations(["The market snapshot could not be loaded, so nothing is shown."])

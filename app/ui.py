@@ -174,13 +174,14 @@ def require_local_only() -> None:
         st.stop()
 
 
-def page_header(title: str, intro: str, research_notice: bool = True) -> dict | None:
-    """Title, the snapshot as-of notice (a warning once it is stale) and, unless turned off, the research-only notice."""
+def page_header(title: str, intro: str, research_notice: bool = True, snapshot_notice: bool = True) -> dict | None:
+    """Title and, unless turned off, the snapshot as-of notice (a warning once it is stale) and the research-only
+    notice."""
     require_local_only()
     st.title(title)
     st.markdown(intro)
     snap = snapshot()
-    if snap is not None:
+    if snap is not None and snapshot_notice:
         notice = disclosures.snapshot_notice(snap, settings()["agent"]["stale_after_days"])
         (st.warning if notice.level == "warning" else st.info)(notice.text, icon=":material/calendar_today:")
     if research_notice:

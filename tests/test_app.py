@@ -98,7 +98,8 @@ class TestPagesOnFrozenOutputs(AppCase):
                 self.assertFalse(at.exception, [e.message for e in at.exception])
                 self.assertFalse(at.error, texts(at, "error"))
                 notices = texts(at, "info") + texts(at, "warning")
-                self.assertTrue(any("frozen snapshot as of" in n for n in notices), notices)
+                self.assertEqual(any("frozen snapshot as of" in n for n in notices), name != "market_dashboard",
+                                 notices)
                 self.assertTrue(any(disclosures.RESEARCH_ONLY in c for c in texts(at, "caption")))
                 self.assertIn("Limitations", texts(at, "subheader"))
         self.assertEqual({k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}, before)

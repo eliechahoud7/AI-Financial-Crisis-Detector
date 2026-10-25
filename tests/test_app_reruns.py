@@ -62,7 +62,7 @@ class TestReruns(AppCase):
     def test_stale_snapshot_warning_on_every_page(self):
         stale = SETTINGS["agent"]["stale_after_days"] + 23
         with unittest.mock.patch.object(disclosures, "snapshot_age_days", return_value=stale):
-            for name in ("market_dashboard", "company_distress", "research_workflow"):
+            for name in ("market_stress", "company_distress", "research_workflow"):
                 with self.subTest(page=name):
                     at = page(name).run()
                     self.assertTrue(any(f"{stale} days old" in w.value for w in at.warning), name)

@@ -7,14 +7,12 @@ import ui
 from fincrisis.rag import answer as ans
 
 ui.page_header("Financial RAG Assistant",
-               "Ask about the project's documents: decisions, model card, data and model reports. Answers quote the "
-               "retrieved passages with numbered citations, or say that the evidence is insufficient.")
+               "Ask questions about the project and get answers based on its documentation, with references to the "
+               "sources.")
 
 rag = ui.settings()["rag"]
 status = ui.index_status()
-if status["ready"]:
-    st.caption(f"Index: {status['chunks']} passages, built {status['built_at_utc']} with {status['embedding_model']}.")
-else:
+if not status["ready"]:
     ui.show_index_problem(status)
 
 use_llm = st.toggle("Let the local model write the answer (Ollama)", key="rag_llm",

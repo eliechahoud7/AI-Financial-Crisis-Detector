@@ -86,6 +86,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
 ```
 
+Set `FINCRISIS_LIVE_OLLAMA=1` to include the test against the local Ollama model
+(it needs Ollama running with `qwen2.5:3b`; other Ollama tests use a stand-in server).
 Dependency ranges are declared in `pyproject.toml`, and exact versions are in
 `requirements-lock.txt`. Tests that need the downloaded dataset are skipped
 if it is absent. For the full data and model pipeline, see

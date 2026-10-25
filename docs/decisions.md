@@ -1014,3 +1014,32 @@ if the decision changes.
 - **Tests:** `tests/test_rag_regression.py` (comparison logic, the
   development-set rule, the update path, a stale index, and the check on the
   real index when it is current).
+
+---
+
+## D26. Ollama failure handling tests (Phase H, step 5)
+
+- **Date:** 2026-10-25
+- **Problem:** the local model was tested only with a fake transport on the
+  happy path. Timeouts, HTTP errors, malformed or empty replies, a server
+  that disappears, and how these reach the workflow and the dashboard had no
+  tests.
+- **Finding:** the code already handled them. A failed or rejected
+  generation falls back to the extractive answer with a warning: `answer()`
+  catches any generator error, and an empty reply is rejected by the
+  grounding check. No code change was needed.
+- **Tests:** `tests/test_ollama.py`:
+  - a stand-in HTTP server on 127.0.0.1 plays Ollama, so the real `urllib`
+    code runs. HTTP 500, malformed JSON, a reply slower than the timeout,
+    an empty reply and a closed port each give the extractive answer with
+    its citations and a warning, and the timeout is honoured. A malformed
+    model list makes `ollama_status` report the model unavailable without
+    raising;
+  - the workflow wiring with the model unavailable (noted once, answers
+    extractive) and with generation failing (the warning reaches the
+    workflow's warnings);
+  - the RAG and workflow pages with the toggle on: an unavailable model and
+    a failed generation are shown as warnings next to the extractive answer;
+  - an opt-in live test against the configured local model, run only when
+    `FINCRISIS_LIVE_OLLAMA=1` is set. It checks structure and that an
+    accepted answer passes the grounding check, not the wording.

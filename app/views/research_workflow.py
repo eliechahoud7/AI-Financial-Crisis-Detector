@@ -15,7 +15,7 @@ if not status["ready"]:
                f"without document context; document questions will report the problem. {status['remedy']}",
                icon=":material/warning:")
 
-use_llm = st.toggle("Let the local model write document answers (Ollama)", key="wf_llm",
+use_llm = st.toggle("Use the local AI model to generate document answers", key="wf_llm",
                     help="Applies to document questions only; market and distress context is always extractive.")
 
 EXAMPLES = ["What is the current market stress level?", "How well do the bankruptcy models perform?",

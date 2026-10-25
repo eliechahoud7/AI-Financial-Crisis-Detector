@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 import ui
-from fincrisis.dashboard import charts, disclosures
+from fincrisis.dashboard import charts
 
 ui.page_header("Company Distress",
                "Held-out test results of the company-distress baselines trained on the UCI Taiwanese Bankruptcy "
@@ -44,6 +44,3 @@ if results is not None:
 
     with st.expander("Final report (held-out test)"):
         st.markdown(results["final_report"] or "Report not found.")
-    ui.limitations(disclosures.distress_limitations(results))
-else:
-    ui.limitations(["The frozen company-distress results could not be loaded, so nothing is shown."])

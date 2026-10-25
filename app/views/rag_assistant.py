@@ -4,7 +4,6 @@ import pandas as pd
 import streamlit as st
 
 import ui
-from fincrisis.dashboard import disclosures
 from fincrisis.rag import answer as ans
 
 ui.page_header("Financial RAG Assistant",
@@ -70,5 +69,3 @@ if result is not None:
                          hide_index=True, width="stretch")
         else:
             st.write("No passages were retrieved.")
-
-ui.limitations(disclosures.rag_limitations(rag))

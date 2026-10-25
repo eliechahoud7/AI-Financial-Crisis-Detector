@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 import ui
-from fincrisis.dashboard import charts, disclosures
+from fincrisis.dashboard import charts
 
 ui.page_header("Market Stress Analysis",
                "Scores from the frozen market-stress models. The label is 1 when the S&P 500 closes at least 5% "
@@ -82,6 +82,3 @@ if results is not None:
         st.markdown(results["final_report"] or "Report not found.")
     with st.expander("Validation report"):
         st.markdown(results["cv_report"] or "Report not found.")
-    ui.limitations(disclosures.market_stress_limitations(results))
-else:
-    ui.limitations(["The frozen market-stress results could not be loaded, so no scores or metrics are shown."])

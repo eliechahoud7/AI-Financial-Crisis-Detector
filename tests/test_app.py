@@ -18,7 +18,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
-from fincrisis.agents.graph import REFUSAL, build_graph
+from fincrisis.agents.graph import DISCLAIMER, REFUSAL, build_graph
 from fincrisis.agents.runtime import make_tools
 from fincrisis.dashboard import disclosures
 from fincrisis.dashboard import loaders as ld
@@ -42,6 +42,12 @@ def run_page(name: str) -> AppTest:
 
 def texts(at: AppTest, kind: str) -> list[str]:
     return [element.value for element in getattr(at, kind)]
+
+
+def shown_text(at: AppTest) -> str:
+    """Every text element on the page, to check what a reader can see."""
+    kinds = ("title", "header", "subheader", "markdown", "caption", "info", "warning", "error", "success")
+    return "\n".join(str(value) for kind in kinds for value in texts(at, kind))
 
 
 class AppCase(unittest.TestCase):
@@ -90,7 +96,7 @@ class TestConfiguration(unittest.TestCase):
 
 @unittest.skipUnless(PRESENT, "frozen market/distress outputs not present")
 class TestPagesOnFrozenOutputs(AppCase):
-    def test_every_page_renders_with_notices_and_limitations(self):
+    def test_every_page_renders_without_limitations_or_disclaimer(self):
         before = {k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}
         for name in PAGES:
             with self.subTest(page=name):
@@ -100,10 +106,15 @@ class TestPagesOnFrozenOutputs(AppCase):
                 notices = texts(at, "info") + texts(at, "warning")
                 self.assertEqual(any("frozen snapshot as of" in n for n in notices), name != "market_dashboard",
                                  notices)
-                shown = name != "market_dashboard"
-                self.assertEqual(any(disclosures.RESEARCH_ONLY in c for c in texts(at, "caption")), shown)
-                self.assertEqual("Limitations" in texts(at, "subheader"), shown)
+                self.assertNotIn(disclosures.RESEARCH_ONLY, shown_text(at))
+                self.assertNotIn("Limitations", texts(at, "subheader"))
         self.assertEqual({k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}, before)
+
+    def test_result_pages_keep_their_reports(self):
+        for name in ("market_stress", "company_distress"):
+            with self.subTest(page=name):
+                labels = [e.label for e in run_page(name).expander]
+                self.assertIn("Final report (held-out test)", labels)
 
     def test_market_dashboard_explains_each_indicator_in_red(self):
         at = run_page("market_dashboard")
@@ -111,13 +122,6 @@ class TestPagesOnFrozenOutputs(AppCase):
         self.assertEqual(len(at.metric), 4)
         self.assertEqual(len(explanations), 4, texts(at, "caption"))
         self.assertIn("means it fell by 0.52% from the day before", explanations[0])
-
-    def test_only_the_market_dashboard_drops_the_header_research_notice(self):
-        header = f":material/info: {disclosures.RESEARCH_ONLY}"
-        for name in PAGES:
-            with self.subTest(page=name):
-                captions = texts(run_page(name), "caption")
-                self.assertEqual(header in captions, name != "market_dashboard", captions)
 
     def test_chart_pages_draw_their_charts(self):
         for name, minimum in (("market_dashboard", 2), ("market_stress", 6), ("company_distress", 5)):
@@ -193,6 +197,7 @@ class TestInteractions(AppCase):
         markdown = texts(at, "markdown")
         self.assertIn(expected["answer"], markdown)
         self.assertTrue(any(f"`{expected['citations'][0]['source']}`" in m for m in markdown))
+        self.assertNotIn(disclosures.RESEARCH_ONLY, shown_text(at))
 
     def test_rag_page_abstains_without_evidence(self):
         at = self.ask("rag_assistant", "rag_text", "Who won the 2018 FIFA World Cup?")
@@ -208,7 +213,10 @@ class TestInteractions(AppCase):
         at = self.ask("research_workflow", "wf_text", question)
         tools, _ = make_tools(SETTINGS, use_llm=False)
         expected = build_graph(tools).invoke({"question": question})
-        self.assertIn(expected["answer"], texts(at, "markdown"))
+        self.assertTrue(expected["answer"].endswith(f"\n\n{DISCLAIMER}"))  # the CLI answer keeps it
+        self.assertIn(expected["answer"].removesuffix(f"\n\n{DISCLAIMER}"), texts(at, "markdown"))
+        self.assertNotIn(DISCLAIMER, shown_text(at))
+        self.assertNotIn(DISCLAIMER, at.session_state["wf_state"]["answer"])  # nor the "Full workflow state" view
         self.assertTrue(any(c.endswith("retrieve_context → compose_answer") for c in texts(at, "caption")))
 
 

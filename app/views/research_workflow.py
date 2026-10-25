@@ -3,8 +3,7 @@
 import streamlit as st
 
 import ui
-from fincrisis.agents.graph import REFUSAL
-from fincrisis.dashboard import disclosures
+from fincrisis.agents.graph import DISCLAIMER, REFUSAL
 
 ui.page_header("AI Research Workflow",
                "A LangGraph workflow routes each question: the current market-stress signal, the company-distress "
@@ -32,6 +31,7 @@ if asked and question.strip():
     with st.spinner("Running the workflow..."):
         state = graph.invoke({"question": question.strip()})
     state["warnings"] = [*state.get("warnings", []), *notes]  # as scripts/run_crisis_agent.py does
+    state["answer"] = state["answer"].removesuffix(f"\n\n{DISCLAIMER}")  # the page shows no disclaimer
     st.session_state["wf_state"] = state
 
 state = st.session_state.get("wf_state")
@@ -52,5 +52,3 @@ if state is not None:
         st.warning(warning, icon=":material/warning:")
     with st.expander("Full workflow state"):
         st.json(state, expanded=False)
-
-ui.limitations(disclosures.workflow_limitations())

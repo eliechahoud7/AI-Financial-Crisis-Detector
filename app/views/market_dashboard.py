@@ -8,7 +8,8 @@ from fincrisis.dashboard import charts, disclosures
 
 snap = ui.page_header("Market Dashboard",
                       "Historical S&P 500 and VIX data, alongside selected market indicators used by the "
-                      "prediction models. Charts show historical observations, not model predictions.")
+                      "prediction models. Charts show historical observations, not model predictions.",
+                      research_notice=False)
 
 if snap is not None:
     spx, vix = snap["spx"], snap["vix"]

@@ -102,6 +102,13 @@ class TestPagesOnFrozenOutputs(AppCase):
                 self.assertIn("Limitations", texts(at, "subheader"))
         self.assertEqual({k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}, before)
 
+    def test_only_the_market_dashboard_drops_the_header_research_notice(self):
+        header = f":material/info: {disclosures.RESEARCH_ONLY}"
+        for name in PAGES:
+            with self.subTest(page=name):
+                captions = texts(run_page(name), "caption")
+                self.assertEqual(header in captions, name != "market_dashboard", captions)
+
     def test_chart_pages_draw_their_charts(self):
         for name, minimum in (("market_dashboard", 2), ("market_stress", 6), ("company_distress", 5)):
             with self.subTest(page=name):

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 
+from fincrisis.rag import chunking as chk
 from fincrisis.rag import documents as docs
 from fincrisis.rag import index as idx
 
@@ -42,6 +43,42 @@ def model_revision(model_name: str) -> str | None:
         return None
 
 
+def chunking(settings: dict) -> dict:
+    """The configured chunking (D30); settings without a `chunking` block use the original character splitter."""
+    return {"method": "characters", **settings.get("chunking", {})}
+
+
+def chunking_matches(manifest: dict, settings: dict) -> bool:
+    """True if the index was chunked as the settings say (indexes built before D30 used characters)."""
+    built, wanted = manifest.get("chunking", {"method": "characters"}), chunking(settings)
+    if built.get("method") != wanted["method"]:
+        return False
+    return wanted["method"] == "characters" or built.get("min_tokens") == wanted.get("min_tokens")
+
+
+def token_counter(embeddings):
+    """(count, limit): the embedding model's own token count of a text, special tokens included, and the
+    longest input it reads (`max_seq_length`); anything longer is cut off before embedding."""
+    client = getattr(embeddings, "_client", None)
+    tokenizer, limit = getattr(client, "tokenizer", None), getattr(client, "max_seq_length", None)
+    if tokenizer is None or not limit:
+        raise idx.RAGIndexError("structured chunking needs the embedding model's tokenizer and max_seq_length")
+    return (lambda text: len(tokenizer(text, verbose=False)["input_ids"])), int(limit)
+
+
+def split(settings: dict, loaded: list, embeddings) -> tuple[list, dict]:
+    """Chunks for the index, and the chunking record for its manifest."""
+    method = chunking(settings)
+    if method["method"] == "characters":
+        return docs.split_documents(loaded, settings["chunk_size"], settings["chunk_overlap"]), {"method": "characters"}
+    if method["method"] != "structured":
+        raise ValueError(f"unknown chunking method {method['method']!r}")
+    count, limit = token_counter(embeddings)
+    chunks = chk.split_structured(loaded, count, limit, method["min_tokens"],
+                                  include_section=settings["retrieval"]["embed_section_headings"])
+    return chunks, {"method": "structured", "max_tokens": limit, "min_tokens": method["min_tokens"]}
+
+
 def source_list(settings: dict, root: Path = PROJECT_ROOT) -> list[str]:
     paths = docs.discover_sources(root, settings["sources"], settings.get("exclude", []))
     return [p.relative_to(Path(root).resolve()).as_posix() for p in paths]
@@ -55,6 +92,9 @@ def open_store(settings: dict, root: Path = PROJECT_ROOT, embeddings=None, allow
     if manifest.get("embed_section_headings", False) != wanted:
         raise idx.RAGIndexError(f"index was built with embed_section_headings={manifest.get('embed_section_headings', False)}, "
                                 f"config says {wanted}; rebuild with scripts/build_rag_index.py --force")
+    if not chunking_matches(manifest, settings):
+        raise idx.RAGIndexError(f"index was built with chunking {manifest.get('chunking', {'method': 'characters'})}, "
+                                f"config says {chunking(settings)}; rebuild with scripts/build_rag_index.py --force")
     return store, manifest, embeddings
 
 

@@ -3,7 +3,8 @@
 Markdown files are split by headings first, so each chunk keeps the section it
 came from, then into overlapping pieces of bounded size. Every chunk records
 its source path (relative to the project root), section, and chunk id, which
-are used for citations.
+are used for citations. This is the original character splitter; the index
+now uses the structure-aware splitter in `chunking.py` by default (D30).
 """
 
 import hashlib

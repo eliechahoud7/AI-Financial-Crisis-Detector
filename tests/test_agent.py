@@ -311,7 +311,29 @@ class TestRealContext(unittest.TestCase):
             self.assertEqual(markers, list(range(1, len(entries) + 1)))
         market = agent_tools.context_answer("market")["answer"]
         self.assertIn("at least 5% below its highest close", market)  # the D2 target definition
-        self.assertIn("Primary model", market)  # the D13 selection rule
+        self.assertTrue(states_the_selection_rule(cited_sentence(agent_tools.context_answer("market"), "D13.")))
+
+    def test_market_explanation_states_how_the_primary_model_is_selected(self):
+        """Regression (D30): the D13 entry quoted the secondary-metric rule after its passage lost its lead-in."""
+        agent_tools, _ = runtime.make_tools(SETTINGS, use_llm=False)
+        sentence = cited_sentence(agent_tools.context_answer("market"), "D13.")
+        self.assertTrue(states_the_selection_rule(sentence), sentence)
+        self.assertNotRegex(sentence.lower(), r"\bsecondary\b")
+        state = g.build_graph(agent_tools).invoke({"question": "What is the current market stress level?"})
+        self.assertIn(sentence, state["answer"])  # the workflow answer carries the same explanation
+
+
+def cited_sentence(result: dict, section: str) -> str:
+    """The sentence of a context answer that cites the passage from `section`."""
+    [marker] = [c["marker"] for c in result["citations"] if section in c["section"]]
+    sentences = {int(n): s.strip() for s, n in g.re.findall(r"(.*?)\s*\[(\d+)\]", result["answer"])}
+    return sentences[marker]
+
+
+def states_the_selection_rule(sentence: str) -> bool:
+    """Says that the primary model is the one with the highest pooled walk-forward average precision (D13)."""
+    text = sentence.lower()
+    return all(g.re.search(p, text) for p in (r"\bprimary\b", r"\bhighest\b", r"average precision", r"walk-forward|pooled"))
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ of the RAG. The layers that decide what an answer says are plain Python in
 | Part | Uses | Where |
 |---|---|---|
 | Documents with source and section metadata | LangChain (`langchain_core.documents.Document`) | `documents.py` |
-| Chunking by Markdown heading, then by size | LangChain (`MarkdownHeaderTextSplitter`, `RecursiveCharacterTextSplitter`) | `documents.py` |
+| Chunking by Markdown heading, then whole blocks within the embedding model's token limit (D30) | Own parser; the model's tokenizer counts tokens | `chunking.py` (the original character splitter, LangChain's `MarkdownHeaderTextSplitter` and `RecursiveCharacterTextSplitter`, stays in `documents.py`) |
 | Embeddings (all-MiniLM-L6-v2; revision recorded in the index manifest) | LangChain (`langchain_huggingface.HuggingFaceEmbeddings`) | `pipeline.py` |
 | Vector store | LangChain `VectorStore` interface, so `as_retriever()` works; custom FAISS implementation inside | `index.py` (`FaissStore`) |
 | Dense, hybrid and section-scoped retrieval | Custom Python | `retrieval.py`, `answer.py` |

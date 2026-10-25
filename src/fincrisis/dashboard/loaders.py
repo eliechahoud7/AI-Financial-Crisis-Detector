@@ -268,6 +268,8 @@ def rag_index_status(rag_settings: dict, root: Path = PROJECT_ROOT) -> dict:
             status["problem"] = f"the index was built with {manifest['embedding_model']}"
         elif manifest.get("embed_section_headings", False) != rag_settings["retrieval"]["embed_section_headings"]:
             status["problem"] = "the index was built with a different embed_section_headings setting"
+        elif not pipeline.chunking_matches(manifest, rag_settings):
+            status["problem"] = "the index was built with a different chunking setting"
         elif stale := idx.stale_sources(manifest, root, pipeline.source_list(rag_settings, root)):
             status["problem"] = f"the index is out of date for {', '.join(stale)}"
         else:

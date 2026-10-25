@@ -1,8 +1,8 @@
 {
-  "recorded_at_utc": "2026-10-25T12:41:02+00:00",
-  "git_commit": "0d17216",
-  "index_built_at_utc": "2026-10-25T12:40:26+00:00",
-  "index_chunks": 270,
+  "recorded_at_utc": "2026-10-25T13:53:34+00:00",
+  "git_commit": "1a96172",
+  "index_built_at_utc": "2026-10-25T13:52:36+00:00",
+  "index_chunks": 297,
   "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
   "eval_set": "knowledge_base/eval/retrieval_questions.json",
   "answers": {
@@ -16,13 +16,13 @@
             "marker": 1,
             "source": "docs/decisions.md",
             "section": "Design Decisions > D11. VIX alignment rule: previous S&P 500 trading day (Milestone 5, Phase B)",
-            "chunk_id": "docs/decisions.md#23"
+            "chunk_id": "docs/decisions.md#19"
           },
           {
             "marker": 3,
             "source": "data/reports/market_stress/dataset_report.md",
             "section": "Market-Stress Dataset Report > VIX alignment (D11)",
-            "chunk_id": "data/reports/market_stress/dataset_report.md#8"
+            "chunk_id": "data/reports/market_stress/dataset_report.md#9"
           }
         ],
         "top_score": 0.610421
@@ -30,29 +30,29 @@
       "How many trading days ahead does the market-stress label look?": {
         "status": "answered",
         "method": "extractive",
-        "answer": "Trading days are rows in the index price history. [3] Positive labels on consecutive days are highly correlated, because their windows overlap. [3] historical events shaded on both market-history charts, labelled with their name and dates, with context on hover. [4]",
+        "answer": "In words: `y_t = 1` if, during the next 20 trading days, the index closes at least 5% below its highest close since day *t* (including day *t* itself). [1] Frozen range: from 1990-01-01 to the last completed trading date present in both series, 2026-10-23. [4] `market.end_date` in the config is set to that date, so a rerun requests the same range. [4]",
         "citations": [
           {
-            "marker": 3,
+            "marker": 1,
             "source": "docs/decisions.md",
             "section": "Design Decisions > D2. Market-stress target definition",
-            "chunk_id": "docs/decisions.md#5"
+            "chunk_id": "docs/decisions.md#2"
           },
           {
             "marker": 4,
             "source": "docs/decisions.md",
-            "section": "Design Decisions > D29. Simpler dashboard presentation (after Phase H)",
-            "chunk_id": "docs/decisions.md#103"
+            "section": "Design Decisions > D10. Market data snapshot (Milestone 5, Phase A)",
+            "chunk_id": "docs/decisions.md#16"
           }
         ],
-        "top_score": 0.640712
+        "top_score": 0.62588
       },
       "Who won the 2018 FIFA World Cup?": {
         "status": "insufficient_evidence",
         "method": "none",
         "answer": "The indexed documents do not contain enough evidence to answer this question.",
         "citations": [],
-        "top_score": 0.166094
+        "top_score": 0.160274
       }
     },
     "workflow": {

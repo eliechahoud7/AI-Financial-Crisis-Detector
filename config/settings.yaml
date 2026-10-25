@@ -83,7 +83,10 @@ rag:
     - "data/reports/rag/**/*"
   index_dir: "artifacts/rag/index"
   embedding_model: "sentence-transformers/all-MiniLM-L6-v2"   # Apache-2.0, runs on CPU
-  chunk_size: 800                   # characters
+  chunking:                         # D30: structured = whole blocks within the embedding model's token limit
+    method: "structured"            # structured (default) | characters (the original D14 splitter below)
+    min_tokens: 64                  # a shorter trailing chunk or near-empty parent section is merged (fixed, not tuned)
+  chunk_size: 800                   # characters (characters method only)
   chunk_overlap: 120
   retrieval:                        # D16: hybrid and headings did not validate, so the default is the original dense search
     mode: "dense"                   # dense (default) | lexical | hybrid (reciprocal rank fusion of dense and TF-IDF)

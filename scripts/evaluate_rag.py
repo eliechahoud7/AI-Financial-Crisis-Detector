@@ -102,6 +102,7 @@ def main() -> int:
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "index": {k: manifest[k] for k in ("embedding_model", "embedding_model_revision", "chunks", "sources", "chunk_size", "chunk_overlap")},
         "embed_section_headings": manifest.get("embed_section_headings", False),
+        "chunking": manifest.get("chunking", {"method": "characters"}),
         "eval_set": question_file, "questions": len(questions), "configured_mode": settings["retrieval"]["mode"],
         "answerable": sum(q.get("answerable", True) for q in questions), "eval_k": ks, "min_relevance": threshold,
         "retrievers": {},

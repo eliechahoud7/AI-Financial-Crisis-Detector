@@ -432,7 +432,8 @@ if the decision changes.
   files placed in `knowledge_base/documents/`. PDFs are not supported yet.
   Markdown is split by heading first, then into chunks of up to 800
   characters with 120 characters of overlap. Each chunk keeps its source path
-  and section for citations.
+  and section for citations. **Updated 2026-10-25:** replaced by
+  structure-aware chunking within the embedding model's token limit (D30).
 - **Embeddings:** `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, 384
   dimensions, CPU).
   - **Cache only:** it is loaded only from the local Hugging Face cache.
@@ -1198,3 +1199,123 @@ if the decision changes.
   the D25 recording (251 to 270 passages): hit@1 0.308 to 0.346, MRR 0.496
   to 0.515, with q01 falling from first to second place. Both were reviewed
   and re-recorded with `--update`.
+
+---
+
+## D30. Structure-aware, token-bounded chunking
+
+- **Date:** 2026-10-25
+- **Problem (development-set audit):** the character splitter (D14) cut
+  800-character chunks without regard to their content, and produced three
+  problems:
+  - **Cut off by the model:** 53 of 270 chunks (20%) were longer than the 256
+    tokens `all-MiniLM-L6-v2` reads, and the model ignores the rest. The
+    model's limit includes its two special tokens; this was checked by
+    embedding a 256-token text with and without words appended.
+  - **Split content:** the D2 target formula was split from its definition,
+    so the D2 chunk that ranked first held no usable sentence. Tables lost
+    their header in later chunks.
+  - **Fragments:** tiny scraps (the end of a list, a report title) ranked
+    near the top for many questions.
+
+  The splitter also stripped indentation, including inside code blocks, and
+  flattened nested lists.
+- **Decision:** `src/fincrisis/rag/chunking.py`, selected with
+  `rag.chunking.method: structured`:
+  - **Sections:** split by h1-h3 headings, with the same section paths as
+    before, and every line kept as written. Each chunk records the source
+    lines it covers (`start_line`, `end_line`).
+  - **Packing:** whole blocks (paragraphs, list items, tables, code blocks)
+    are packed into chunks of at most the model's `max_seq_length`, counted
+    with its own tokenizer on the exact text it embeds, special tokens
+    included (and the section path, when `embed_section_headings` is on).
+  - **Kept together:** a heading or a lead-in ending in ":" (also when the
+    colon is inside emphasis, as in `**Details:**`) stays with the block that
+    follows it, and a block that starts lowercase (a sentence continued after
+    a formula) stays with the block before it.
+  - **Splitting a long block:**
+    - a table is split between rows, spread evenly; every part repeats the
+      header, and later parts also repeat the section heading;
+    - a code block is split between lines and re-fenced;
+    - prose is split between sentences, and only a single over-long sentence
+      between words.
+
+    The first part is sized to fit with the heading or short introduction
+    before it.
+  - **Short pieces:** a trailing chunk under `min_tokens` (64, fixed before
+    measuring) is merged into the chunk before it. A parent section with
+    almost no text (a title) is merged into the first chunk of its first
+    subsection.
+  - **Manifest:** records the chunking. An index built with other chunking
+    is refused, as for `embed_section_headings` (D16). Settings without a
+    `chunking` block, and older indexes, mean the original splitter, which
+    `method: characters` still selects.
+- **Unchanged:** the relevance threshold, `top_k`, the retriever, sentence
+  selection, the generation prompt and the grounding checks.
+- **Results (development set only; the validation set was not used):**
+  - **Index:** 270 chunks (53 over the limit) became 288 chunks, none over
+    the limit. The 4 chunks under 64 tokens are complete short sections.
+  - **Configured dense retriever** ("After": the documents as they were;
+    "With this record": once this entry is indexed too, 297 chunks, with the
+    lead-in fix below):
+
+    | Measure | Before | After | With this record |
+    |---|---|---|---|
+    | hit@1 | 0.192 | 0.269 | 0.269 |
+    | hit@3 | 0.500 | 0.577 | 0.577 |
+    | hit@5 | 0.538 | 0.692 | 0.654 |
+    | MRR | 0.337 | 0.435 | 0.428 |
+    | Refusals on unanswerable questions | 0.500 | 0.500 | 0.500 |
+
+  - **Reported-only retrievers:** fell. Lexical hit@1 went from 0.346 to
+    0.308 and MRR from 0.515 to 0.501. Hybrid hit@3 went from 0.692 to 0.615
+    and hit@5 from 0.808 to 0.731.
+  - **Audit probes:** the passage defining the market-stress label rose from
+    ranks 44 / 5 / 13 to 4 / 1 / 2 for three phrasings. The 16-feature table
+    and the numbers-only rows of the test-results table still rank poorly;
+    that is left to retrieval (a later step).
+- **Regression found and fixed (lead-in rule):**
+  - **Symptom:** the first version made the workflow's market explanation
+    (D17) quote D13's secondary-metric rule instead of its primary-model
+    selection rule.
+  - **Cause:** the lead-in rule tested for a trailing ":", but this project
+    usually puts the colon inside bold (`**Label:**`), so 34 lead-ins were not
+    kept with their lists. D13's "Primary model and test-set safeguards…:**"
+    ended one chunk while its first item, the selection rule, started the
+    next. Cut off from its introduction, that chunk scored 0.288 against the
+    0.30 per-passage threshold of scoped retrieval and was dropped, although
+    the sentence alone scores 0.80.
+  - **Fix:** a lead-in may end in ":" followed by closing `*` or `_`. The D13
+    chunk then starts with its lead-in and scores 0.327, and the workflow
+    quotes the selection rule again. The dense retriever's development
+    results did not change.
+  - **Not changed:** the 256-token limit, the threshold, `top_k` and
+    sentence selection.
+- **Considered:** a 200-token cap. On the development set it raised hit@1 to
+  0.346 and MRR to 0.469, kept the D13 passage, and found the test-results
+  row, but lowered hit@3 to 0.538 and hit@5 to 0.654. One question moves
+  these rates by about 0.04, so the difference is within noise. Packing to
+  the model's limit was kept. A size target should be compared only on a
+  new held-out question set.
+- **RAG regression baselines (D25):** re-recorded after review.
+  - Unchanged in substance: the VIX answer (citation ids renumbered) and the
+    out-of-scope refusal (top score only).
+  - Better: the label-horizon answer now starts with D2's definition.
+  - Unchanged: the workflow market answer, once the lead-in fix restored
+    the selection rule.
+- **Tests:** `tests/test_chunking.py` covers:
+  - token limits, including the section prefix;
+  - split tables, re-fenced code, and definitions kept together;
+  - merged fragments, no heading-only chunks, complete short sections kept;
+  - citation ids, sections and line ranges;
+  - prose and sentence boundaries;
+  - refusing an index with other chunking;
+  - on the project documents with the real tokenizer: no chunk over the
+    limit, D2 in one chunk, and the development questions still valid;
+  - lead-ins with the colon inside emphasis, and that no project chunk ends
+    with a lead-in whose list continues in the next. Both tests fail with the
+    old rule.
+
+  `tests/test_agent.py` checks that the workflow's D13 explanation states
+  the selection rule: the primary model has the highest pooled walk-forward
+  average precision. It checks the meaning, not exact wording.

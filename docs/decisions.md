@@ -1573,3 +1573,124 @@ if the decision changes.
     `open_store` and reported by the dashboard;
   - on the project index, the model-files passage reaches the reranker's
     candidates.
+
+---
+
+## D34. Audit of the market-stress dataset, splits and evaluation (Phases B and C)
+
+- **Date:** 2026-10-25. **Status:** findings recorded and accepted as
+  findings. This is **not** a final approval of Phase B or Phase C, and it
+  changes no data, code, model, threshold or result.
+- **Scope:** read-only review of D2, D3 and D10-D13 and their code, tests and
+  frozen outputs. Nothing was trained, scored or re-evaluated, and the
+  held-out test predictions were not analysed.
+- **Approval record:** the repository has no earlier Phase B audit or
+  approval, and no record of the review that D13 requires between its two
+  stages. Phase B is documented by D11 and D12, by
+  `data/reports/market_stress/dataset_report.md`, and by tests.
+- **Safeguards verified (code and tests):**
+  - **Target** (`src/fincrisis/features/market_target.py`, D2): uses only
+    closes from *t*+1 to *t*+20, with the running peak starting at *C_t*. The
+    last 20 rows are NaN, never 0. Tested in `tests/test_market_target.py`.
+  - **Features** (`src/fincrisis/features/market_features.py`, D11, D12):
+    - S&P 500 windows are trailing, using closes up to *t*;
+    - VIX is aligned to the S&P 500 calendar, then lagged one session;
+    - `vix_rv_ratio` uses the previous session's realized volatility.
+
+    Prediction time is after the close on *t*. Tested in
+    `tests/test_market_features.py`, including that later prices and VIX
+    closes dated *t* or later never change a feature at *t*.
+  - **Splits** (`src/fincrisis/evaluation/splits.py`, D12):
+    - 15 expanding walk-forward folds (2000-2014);
+    - training ends 20 sessions before each validation year, and
+      development ends 20 sessions before 2015-01-02;
+    - a purge shorter than the horizon is refused.
+
+    With purge = horizon = 20, no training label uses a close inside its
+    validation year, and no development label uses a test-period close.
+    Because the training windows only expand forward, no embargo is needed
+    after a validation year. Tested in `tests/test_market_splits.py`.
+  - **Fitting** (`src/fincrisis/models/market_stress.py`,
+    `scripts/train_market_stress.py`):
+    - models are cloned and fitted on each fold's training rows;
+    - the scaler is inside the logistic-regression pipeline;
+    - there is no imputation, no feature selection and no tuning;
+    - the CV stage receives development rows only;
+    - the final stage fits on development rows and only scores the test
+      rows.
+
+    Tested in `tests/test_market_models.py`.
+  - **Frozen outputs:** `selection.json` and `test_metrics.json` were both
+    produced from clean commit `7e80173`, at 15:27:56 and 15:30:03 UTC on
+    2026-10-24. The test results record the SHA-256 of the selection they
+    used, which matches the current file. Integrity (D22) and
+    reproducibility (D23) checks cover them and pass.
+- **Data roles:**
+  - **Development:** 1990-12-31 to 2014-12-02, 6,029 eligible rows.
+  - **Out-of-fold validation:** the 15 yearly blocks of 2000-2014, 3,753
+    rows. There is no separate validation set for market stress.
+  - **Purged:** 2014-12-03 to 2014-12-31, 20 rows.
+  - **Held-out test:** 2015-01-02 to 2026-09-25, 2,950 rows.
+  - **Unlabelled:** the last 20 snapshot rows, to 2026-10-23.
+- **The 2015-2026 test set has been evaluated (2026-10-24) and is no longer
+  untouched.** Its results are historical results of the frozen models. It
+  must not be used to select, tune or compare new models or thresholds.
+- **Limits of the evidence on test-set timing:** the outputs show one final
+  run, made after the selection was locked, from clean committed code. They
+  cannot show that the test set was never evaluated or inspected before
+  that, for example while the evaluation code was developed in `06f4ed7`.
+  This is unverified, not disproved.
+- **Open methodological questions** (recorded, not resolved):
+  - **Threshold transfer.** Each model's threshold is the max-F1 threshold
+    on the pooled out-of-fold predictions of 15 fold models. It is applied
+    unchanged to a different model, refitted on all development rows.
+    - **Rules:** the score is the raw feature, so the threshold transfers.
+    - **Logistic regression and XGBoost:** fold score scales differ widely.
+      The median out-of-fold score ranges over folds from 0.014 to 0.675
+      for logistic regression and from 0.010 to 0.708 for XGBoost. The
+      final model's scale was not checked, and the fold models were not
+      saved.
+    - **Affected:** the secondary XGBoost signal shown by the dashboard and
+      the workflow.
+  - **Pooled out-of-fold aggregation.** Pooled metrics also reward score
+    offsets between folds, not only ranking within a year.
+    - **Evidence:** the dummy's constant score per fold (its training
+      prevalence) is negatively correlated with the validation prevalence
+      (Spearman -0.52), so its pooled ROC-AUC is 0.318.
+    - **The choice changes the result:** the primary model was selected on
+      pooled average precision (0.618 for `rule_downside_vol_20`). The mean
+      of the defined yearly values ranks `rule_vix_pct_252` first (0.461
+      against 0.429).
+    - **Already recorded:** the primary-model rule was added to D13 after
+      the CV results were seen, before the test run.
+  - **Dependence from overlapping labels.**
+    - **Size:** label autocorrelation is 0.94 at lag 1, 0.27 at 20, 0.19 at
+      60 and 0.11 at 120 sessions. There are about 2.6-2.7 episodes a year:
+      65 in development and 30 in the test period. Their median length is
+      17-19 sessions.
+    - **What the bootstrap covers:** the 60-session circular block bootstrap
+      (D13) covers dependence within an episode. It does not fully cover
+      the longer clustering of volatile regimes. The 20- and 120-session
+      sensitivity intervals are similar.
+    - **What it does not cover:** the variability that comes from refitting
+      the models, and each block wraps from the last row back to the first.
+    - **Training:** overlapping rows are not down-weighted.
+- **Historical results and a future evaluation:**
+  - **Historical results:** the frozen D13 results stand as historical
+    results and are not re-run.
+  - **New models or thresholds:** any new model, threshold or selection rule
+    needs evaluation on data that has not been used. With the snapshot
+    frozen at 2026-10-23, that means forward data collected after it. Each
+    new day's label is known 20 sessions later.
+  - **Expected yield:** at about 2.6 episodes a year, one year gives too few
+    episodes to compare models. A forward period is suitable for
+    monitoring, not for model selection, unless it runs for many years.
+- **Decisions still required** (not made here):
+  - whether to formally approve Phase B and the D13 protocol on this
+    evidence;
+  - how thresholds of fitted models should be set for a final model;
+  - which aggregation is the primary selection metric for any future
+    comparison;
+  - whether to address overlapping labels in training;
+  - how to record reviews between stages for any rerun;
+  - whether and how to set up a forward evaluation.

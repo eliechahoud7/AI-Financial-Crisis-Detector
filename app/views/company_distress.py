@@ -13,7 +13,11 @@ ui.page_header("Company Distress",
 
 results = ui.distress_results()
 if results is not None:
-    st.warning(results["label_caveat"], icon=":material/help:")
+    # A plainer wording of the frozen `label_caveat`, which stays unchanged in the results files.
+    st.warning("The models are evaluated on their ability to identify the minority class in the dataset. The exact "
+               "meaning of the target labels has not been independently verified, so the results should be "
+               "interpreted as classification performance rather than confirmed bankruptcy predictions.",
+               icon=":material/help:")
     families = results["test_metrics"]["results"]
 
     table = pd.DataFrame([{

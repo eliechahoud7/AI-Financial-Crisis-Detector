@@ -145,7 +145,8 @@ class TestPagesOnFrozenOutputs(AppCase):
 
     def test_distress_page_shows_the_label_caveat_and_no_scoring_form(self):
         at = run_page("company_distress")
-        self.assertTrue(any("remain unverified" in w for w in texts(at, "warning")))
+        self.assertTrue(any("has not been independently verified" in w and "rather than confirmed bankruptcy" in w
+                            for w in texts(at, "warning")))
         self.assertEqual(len(at.text_input) + len(at.number_input), 0)
 
     def test_entry_point_opens_the_market_dashboard(self):

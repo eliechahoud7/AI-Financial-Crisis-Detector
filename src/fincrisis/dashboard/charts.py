@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -55,13 +56,14 @@ SCORE_AXIS = "Model score (ranks risk; not a probability)"
 HOVER_BG = "#ffffff"
 HEAT_LOW, HEAT_HIGH = "#cde2fb", "#6da7ec"   # sequential blue steps 100 and 300
 DRAWDOWN_FILL = "rgba(82, 81, 78, 0.15)"
+EVENT_FILL = "rgba(237, 161, 0, 0.12)"   # light amber band for historical events, distinct from gray OBSERVED
 
 # Light -> dark steps of the same palette (dataviz reference: dark categorical slots and chart chrome).
 DARK = {
     "#2a78d6": "#3987e5", "#eb6834": "#d95926", "#1baf7a": "#199e70", "#eda100": "#c98500",
     INK: "#f0efec", INK_2: "#c3c2b7", GRID: "#2c2c2a", AXIS: "#383835", SURFACE: "#1a1a19", HOVER_BG: "#262624",
     HEAT_LOW: "#184f95", HEAT_HIGH: "#3987e5", DRAWDOWN_FILL: "rgba(195, 194, 183, 0.18)",
-    OBSERVED: "rgba(137, 135, 129, 0.32)",
+    OBSERVED: "rgba(137, 135, 129, 0.32)", EVENT_FILL: "rgba(201, 133, 0, 0.22)",
 }
 
 
@@ -179,7 +181,48 @@ def _break_gaps(frame: pd.DataFrame, column: str, max_days: int = 10) -> pd.Data
 
 # ----------------------------------------------------------------------------- market history
 
-def price_and_vix(snapshot: dict) -> go.Figure:
+@dataclass(frozen=True)
+class MarketEvent:
+    """A historical market event, shaded from the S&P 500's closing high (`start`) to its closing low (`end`)."""
+    name: str
+    start: str
+    end: str
+    context: str
+
+
+# Dates are S&P 500 closing highs and lows, checked against the frozen snapshot and published index history.
+# Add an event by appending to this tuple; both market-history charts draw every event inside their date range.
+MARKET_EVENTS = (
+    MarketEvent("Global Financial Crisis", "2007-10-09", "2009-03-09",
+                "US housing losses spread through the banking system; the sell-off<br>"
+                "deepened after Lehman Brothers failed in September 2008."),
+    MarketEvent("COVID-19 crash", "2020-02-19", "2020-03-23",
+                "Stocks fell as the pandemic spread and economies shut down,<br>"
+                "one of the fastest declines on record."),
+)
+
+
+def _event_period(start: pd.Timestamp, end: pd.Timestamp) -> str:
+    return f"{start:%b} – {end:%b %Y}" if start.year == end.year else f"{start:%b %Y} – {end:%b %Y}"
+
+
+def _mark_events(fig: go.Figure, events: tuple[MarketEvent, ...], dates: pd.Index) -> None:
+    """Shade each event inside `dates` across both panels, labelled at the top of the first; hover the label for context."""
+    for event in events:
+        start, end = pd.Timestamp(event.start), pd.Timestamp(event.end)
+        if end < dates.min() or start > dates.max():
+            continue
+        fig.add_vrect(x0=start, x1=end, row="all", col=1, fillcolor=EVENT_FILL, line_width=0, layer="below")
+        fig.add_annotation(
+            x=start, xref="x", y=1, yref="y domain", xanchor="left", yanchor="top", showarrow=False, align="left",
+            text=f"{event.name}<br>{_event_period(start, end)}", font={"size": 11, "color": INK_2},
+            bgcolor=SURFACE, opacity=0.9, borderpad=2,
+            hovertext=(f"<b>{event.name}</b>, {start:%d %b %Y} – {end:%d %b %Y}<br>{event.context}<br>"
+                       "Shaded from the S&P 500's closing high to its closing low."),
+            hoverlabel={"bgcolor": HOVER_BG, "font": {"color": INK}})
+
+
+def price_and_vix(snapshot: dict, events: tuple[MarketEvent, ...] = MARKET_EVENTS) -> go.Figure:
     """S&P 500 and VIX closes from the frozen snapshot, in two panels with a shared date axis."""
     _require(snapshot, "spx", "vix", "as_of", what="market snapshot")
     spx, vix = snapshot["spx"], snapshot["vix"]
@@ -199,11 +242,12 @@ def price_and_vix(snapshot: dict) -> go.Figure:
         {"count": 5, "label": "5y", "step": "year", "stepmode": "backward"},
         {"step": "all", "label": "All"}], "bgcolor": GRID, "activecolor": AXIS, "font": {"color": INK}}, row=1, col=1)
     fig.update_layout(hovermode="x unified", showlegend=False)
+    _mark_events(fig, events, spx.index)
     return _style(fig, "S&P 500 and VIX: historical closes", height=560,
                   subtitle=f"Frozen snapshot to {snapshot['as_of']}; observations, not model output")
 
 
-def drawdown_and_volatility(features: pd.DataFrame) -> go.Figure:
+def drawdown_and_volatility(features: pd.DataFrame, events: tuple[MarketEvent, ...] = MARKET_EVENTS) -> go.Figure:
     """Drawdown from the 252-session high and 20-day downside volatility, both backward-looking (D12)."""
     _columns(features, "drawdown_252", "downside_vol_20", what="market features")
     frame = features[["drawdown_252", "downside_vol_20"]].dropna()
@@ -222,6 +266,7 @@ def drawdown_and_volatility(features: pd.DataFrame) -> go.Figure:
     fig.update_yaxes(tickformat=".0%", title_text="Volatility", row=2, col=1)
     fig.update_xaxes(title_text="Date", row=2, col=1)
     fig.update_layout(hovermode="x unified", showlegend=False)
+    _mark_events(fig, events, frame.index)
     last = frame.index[-1].date()
     return _style(fig, "Drawdown and downside volatility", height=520,
                   subtitle=f"Computed from closes up to each day, to {last}")

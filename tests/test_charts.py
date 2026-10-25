@@ -103,6 +103,26 @@ class TestMarketCharts(unittest.TestCase):
         with self.assertRaises(ch.ChartDataError):
             ch.drawdown_and_volatility(features.iloc[:1])
 
+    def test_events_shade_both_panels_with_a_hover_label(self):
+        index = pd.bdate_range("2019-12-02", "2020-06-30")
+        snap = {"spx": pd.Series(np.linspace(3000, 3200, len(index)), index=index),
+                "vix": pd.Series(np.linspace(15, 20, len(index)), index=index), "as_of": index[-1].date()}
+        features = pd.DataFrame({"drawdown_252": -0.1, "downside_vol_20": 0.2}, index=index)
+        for fig in (ch.price_and_vix(snap), ch.drawdown_and_volatility(features)):
+            self.assertEqual(len(fig.data), 2)  # the observations only; events add no traces
+            self.assertEqual([(s.x0, s.x1, s.yref) for s in fig.layout.shapes],
+                             [(pd.Timestamp("2020-02-19"), pd.Timestamp("2020-03-23"), "y domain"),
+                              (pd.Timestamp("2020-02-19"), pd.Timestamp("2020-03-23"), "y2 domain")])
+            labels = [a for a in fig.layout.annotations if a.hovertext]  # the GFC is outside the range
+            self.assertEqual([a.text for a in labels], ["COVID-19 crash<br>Feb – Mar 2020"])
+            self.assertIn("19 Feb 2020 – 23 Mar 2020", labels[0].hovertext)
+            self.assertIn("pandemic", labels[0].hovertext)
+            self.assertIn(ch.DARK[ch.EVENT_FILL], ch.themed(fig, dark=True).to_json())
+        extra = ch.MarketEvent("Test event", "2020-05-01", "2020-06-01", "Context.")
+        fig = ch.price_and_vix(snap, events=(extra,))
+        self.assertEqual([a.text for a in fig.layout.annotations if a.hovertext], ["Test event<br>May – Jun 2020"])
+        self.assertEqual(len(ch.price_and_vix(snapshot()).layout.shapes), 0)  # 2026 data: no event in range
+
     def test_score_timeline_separates_observations_scores_and_signals(self):
         results = market_results()
         fig = ch.stress_score_timeline(results)
@@ -264,6 +284,15 @@ class TestChartsOnFrozenOutputs(unittest.TestCase):
         self.assertEqual(list(figures[10].data[0].y), [r["average_precision"] for r in results.values()])
         self.assertIn(str(len(distress["selection"]["large_value_columns"])), figures[14].layout.title.text)
         self.assertEqual({k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}, before)
+
+    def test_event_dates_are_the_closing_high_and_low_in_the_snapshot(self):
+        spx = ld.market_snapshot(PROJECT_ROOT, PATHS)["spx"]
+        for event in ch.MARKET_EVENTS:
+            with self.subTest(event=event.name):
+                window = spx[event.start:event.end]
+                self.assertEqual(window.idxmax(), pd.Timestamp(event.start))
+                self.assertEqual(window.idxmin(), pd.Timestamp(event.end))
+                self.assertEqual(spx[:event.start].idxmax(), pd.Timestamp(event.start))  # a record high at the time
 
 
 if __name__ == "__main__":

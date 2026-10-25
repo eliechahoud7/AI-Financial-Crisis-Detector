@@ -28,16 +28,21 @@ Everything runs locally. No paid APIs, cloud services, Docker, or fine-tuning.
   generation with grounding checks (D14–D16).
 - **Workflow**: a LangGraph workflow routes questions to the market signal, the distress
   results, or the documents (D17).
-- **Dashboard**: a local Streamlit + Plotly dashboard over all of the above (D18–D21).
+- **Dashboard**: a local Streamlit + Plotly dashboard over all of the above (D18–D21, D29).
 
 ## Dashboard
 
 Five pages: Market Dashboard, Market Stress Analysis, Company Distress, Financial RAG Assistant
 and AI Research Workflow. The dashboard only reads the frozen outputs: it never downloads data,
-trains or refits models, regenerates predictions, or rebuilds the document index. Every page
-shows the market snapshot's as-of date (with a warning once it is more than 7 days old), the
-research-only disclaimer and the relevant limitations. Missing or altered artifacts are reported
-with instructions instead of being shown.
+trains or refits models, regenerates predictions, or rebuilds the document index. Missing or
+altered artifacts are reported with instructions instead of being shown. The Market Dashboard
+explains its four indicators in plain language, shades historical market events on its charts and
+ends with a summary generated from the snapshot.
+
+The pages do not show the snapshot's as-of date, a warning when it is old, the research-only
+disclaimer or the limitations of each component (D29). Those are documented in
+`docs/model_card.md` and `docs/decisions.md`, and the workflow CLI still states its disclaimer
+and warns about an old snapshot.
 
 ```powershell
 # One-time: install the dashboard, RAG and workflow dependencies (CPU-only PyTorch)

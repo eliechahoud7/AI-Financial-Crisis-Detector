@@ -728,6 +728,9 @@ if the decision changes.
     the workflow), the research-only disclaimer (the workflow's own text,
     D17), and the limitations of each component. Numbers in these texts are
     read from the frozen results, not written into the code.
+    **Updated 2026-10-25:** the dashboard no longer shows these notices
+    (D29); `disclosures.py` still builds them, and also builds the Market
+    Dashboard summary.
 - **Refactor:** the workflow's tool wiring (`make_tools`) moved unchanged from
   `scripts/run_crisis_agent.py` to `src/fincrisis/agents/runtime.py`, so the
   CLI and the dashboard share it. `agents/tools.py` now exposes its checksum
@@ -838,7 +841,9 @@ if the decision changes.
   presentation helpers in `app/ui.py`. All loading, checks, texts and charts
   come from `fincrisis.dashboard` (D18-D20); answers come from the existing
   RAG `answer()` and the LangGraph workflow wired by `agents.runtime` (D17).
-  - **Market Dashboard:** snapshot closes, drawdown and downside volatility.
+  - **Market Dashboard:** snapshot closes, drawdown and downside volatility
+    (updated 2026-10-25: with indicator explanations, event annotations and
+    a generated summary, D29).
   - **Market Stress Analysis:** the latest day's frozen scores, scores over
     time, and the validation and test evaluation.
   - **Company Distress:** frozen test results, cross-validation and grouped
@@ -854,6 +859,9 @@ if the decision changes.
   than `agent.stale_after_days`), the research-only disclaimer, and the
   limitations from `disclosures.py`. A missing or altered artifact shows the
   loader's error and remedy instead of the page content.
+  **Updated 2026-10-25:** the as-of date, the warning, the disclaimer and the
+  limitations are no longer shown (D29). The error and remedy for a missing or
+  altered artifact are unchanged.
 - **Local only:** `.streamlit/config.toml` binds the server to `localhost`
   and sets `browser.gatherUsageStats = false`. Streamlit reads that file only
   from the working directory, so a launch from elsewhere would listen on all
@@ -878,7 +886,8 @@ if the decision changes.
 - **Tests:** `tests/test_app.py` runs the pages with Streamlit's AppTest (no
   server): every page renders with its notices and limitations, missing and
   altered artifacts are reported, and the RAG and workflow pages give the
-  same answers as the pipeline and the CLI.
+  same answers as the pipeline and the CLI. (Updated 2026-10-25: pages are
+  now checked to render without the notices and limitations, D29.)
 
 ---
 
@@ -1068,7 +1077,9 @@ if the decision changes.
       data unchanged, no overwrite, an altered dataset refused.
   - `tests/test_app_reruns.py`: a frozen output altered after a page has
     loaded is refused on the next rerun; the stale-snapshot warning appears
-    on the pages; the RAG page explains a missing embedding model; and an
+    on the pages (updated 2026-10-25: now that no page shows the snapshot
+    notice, even when the snapshot is stale, D29); the RAG page explains a
+    missing embedding model; and an
     opt-in live test (`FINCRISIS_LIVE_SERVER=1`) starts the real server from
     the project root, checks that it listens only on loopback addresses and
     answers, and then stops the whole process tree.
@@ -1108,3 +1119,82 @@ if the decision changes.
   scripts and dashboard reruns (D27), and this command (D28). The test suite
   grew from 224 to about 300 tests, and nothing was retrained, re-evaluated
   or tuned.
+
+---
+
+## D29. Simpler dashboard presentation (after Phase H)
+
+- **Date:** 2026-10-25
+- **Decision:** the dashboard pages were made shorter and easier to read for
+  people without a finance or machine-learning background. Only presentation
+  changed: no data, model, threshold, frozen output or check changed, and the
+  CLI scripts are unchanged.
+- **Removed from the pages:**
+  - the snapshot's as-of notice and its stale-snapshot warning (page
+    headers), and the snapshot date in the sidebar;
+  - the research-only disclaimer and every "Limitations" section;
+  - the Market Dashboard's "Snapshot details" section and the RAG
+    Assistant's index line (passages, build time, embedding model).
+  - The workflow page drops the disclaimer that the graph appends to each
+    answer (D17), also from its "Full workflow state" view;
+    `scripts/run_crisis_agent.py` still prints it.
+- **Still shown:** a missing or altered artifact still shows the loader's
+  error and remedy (D18, D19), and a missing or out-of-date index still
+  disables RAG questions. After a market question, the workflow's answer
+  still warns when the snapshot is old.
+- **Trade-off:** the interface no longer states the age of the market data,
+  warns when it is stale, or lists the limitations of each component. The
+  limitations remain in `docs/model_card.md`, the frozen reports (also shown
+  on the pages as "Final report" and "Validation report") and this file.
+  `disclosures.py` still builds the notices, so they can be restored.
+- **Reworded:**
+  - shorter introductions on the Market Dashboard, Market Stress Analysis,
+    Company Distress and RAG Assistant pages; simpler labels for the
+    local-model toggles;
+  - the Market Stress signal summary says whether the primary model's latest
+    score is below or at/above its frozen threshold, and gives only its test
+    recall at that threshold (as a share of the days followed within 20
+    sessions by a 5% fall, D2). Average precision and precision are no longer
+    in that paragraph; the evaluation charts below still show them;
+  - the Company Distress page shows a plainer wording of the label caveat.
+    The frozen `label_caveat` in the results files is unchanged, and the new
+    wording still makes no claim that label 1 means bankruptcy (D4).
+- **Added to the Market Dashboard:**
+  - a plain-language explanation in muted red beneath each of the four
+    indicators, with its example filled in from the latest values;
+  - historical events shaded on both market-history charts, labelled with
+    their name and dates, with context on hover. Each event in
+    `charts.MARKET_EVENTS` runs from an S&P 500 closing high to the following
+    closing low. The 2007–09 financial crisis (2007-10-09 to 2009-03-09) and
+    the 2020 COVID-19 crash (2020-02-19 to 2020-03-23) were checked against
+    published index history and the frozen snapshot; a test checks every
+    event's dates against the snapshot, so events added later are checked too;
+  - a "Market overview summary" at the end of the page
+    (`disclosures.market_overview`). It is built from the snapshot without a
+    language model. Each sentence places the latest reading against the
+    snapshot's own history (bottom, middle or top third), and the drawdown
+    sentence uses the usual 10% "correction" and 20% "bear market" terms. A
+    sentence whose inputs are missing is left out.
+- **Charts:** every chart hides the Zoom, Pan, Autoscale and Reset axes
+  toolbar buttons. Hover, legends and the other buttons are kept, and
+  dragging on a chart still zooms.
+- **Not checked visually:** unlike the D21 review, these changes were not
+  rendered in a browser; the image exporter is not installed, and adding it
+  would fail the environment check (D28). They are covered by AppTest and
+  unit tests only.
+- **Tests:** `tests/test_app.py` and `tests/test_app_reruns.py` check that no
+  page shows the notices, limitations or disclaimer, even with a stale
+  snapshot. They also check the workflow page answer (the CLI answer without
+  the disclaimer), the indicator explanations, the summary's position and
+  text, and the toolbar setting on every chart. `tests/test_dashboard.py`
+  covers the summary's wording and missing inputs; `tests/test_charts.py`
+  covers the event shading, labels and dates.
+- **RAG reference answers (D25):** adding this record changed one extractive
+  reference answer ("How many trading days ahead does the market-stress
+  label look?"). Its two sentences from D2 and their citation are
+  unchanged; its off-topic sentence from D20 is replaced by an off-topic one
+  from this record. The configured (dense) retriever's metrics did not
+  change. The lexical retriever, which is only reported, moved slightly since
+  the D25 recording (251 to 270 passages): hit@1 0.308 to 0.346, MRR 0.496
+  to 0.515, with q01 falling from first to second place. Both were reviewed
+  and re-recorded with `--update`.

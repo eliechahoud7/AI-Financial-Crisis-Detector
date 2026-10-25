@@ -1,8 +1,8 @@
 {
-  "recorded_at_utc": "2026-10-25T00:10:03+00:00",
-  "git_commit": "8235060",
-  "index_built_at_utc": "2026-10-25T00:08:55+00:00",
-  "index_chunks": 251,
+  "recorded_at_utc": "2026-10-25T12:41:02+00:00",
+  "git_commit": "0d17216",
+  "index_built_at_utc": "2026-10-25T12:40:26+00:00",
+  "index_chunks": 270,
   "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
   "eval_set": "knowledge_base/eval/retrieval_questions.json",
   "answers": {
@@ -30,7 +30,7 @@
       "How many trading days ahead does the market-stress label look?": {
         "status": "answered",
         "method": "extractive",
-        "answer": "Trading days are rows in the index price history. [3] market-stress confusion matrices at 0.5 and calibration for the rule models: their scores are not probabilities, and none were recorded; [4] Positive labels on consecutive days are highly correlated, because their windows overlap. [3]",
+        "answer": "Trading days are rows in the index price history. [3] Positive labels on consecutive days are highly correlated, because their windows overlap. [3] historical events shaded on both market-history charts, labelled with their name and dates, with context on hover. [4]",
         "citations": [
           {
             "marker": 3,
@@ -41,8 +41,8 @@
           {
             "marker": 4,
             "source": "docs/decisions.md",
-            "section": "Design Decisions > D20. Dashboard charts (Phase G)",
-            "chunk_id": "docs/decisions.md#72"
+            "section": "Design Decisions > D29. Simpler dashboard presentation (after Phase H)",
+            "chunk_id": "docs/decisions.md#103"
           }
         ],
         "top_score": 0.640712

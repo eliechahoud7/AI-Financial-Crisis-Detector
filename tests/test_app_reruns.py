@@ -59,13 +59,15 @@ class TestReruns(AppCase):
             self.assertFalse(at.exception)
             self.assertTrue(any("test_predictions.csv does not match" in e.value for e in at.error))
 
-    def test_stale_snapshot_warning_on_every_page(self):
+    def test_no_page_shows_the_snapshot_notice_even_when_stale(self):
         stale = SETTINGS["agent"]["stale_after_days"] + 23
         with unittest.mock.patch.object(disclosures, "snapshot_age_days", return_value=stale):
-            for name in ("market_stress", "company_distress", "research_workflow"):
+            for name in ("market_dashboard", "market_stress", "company_distress", "rag_assistant",
+                         "research_workflow"):
                 with self.subTest(page=name):
                     at = page(name).run()
-                    self.assertTrue(any(f"{stale} days old" in w.value for w in at.warning), name)
+                    notices = [e.value for e in (*at.info, *at.warning)]
+                    self.assertFalse(any("frozen snapshot as of" in n or "days old" in n for n in notices), notices)
 
 
 READY = ld.rag_index_status(SETTINGS["rag"])["ready"]

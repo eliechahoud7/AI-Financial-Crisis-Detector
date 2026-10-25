@@ -96,16 +96,14 @@ class TestConfiguration(unittest.TestCase):
 
 @unittest.skipUnless(PRESENT, "frozen market/distress outputs not present")
 class TestPagesOnFrozenOutputs(AppCase):
-    def test_every_page_renders_without_limitations_or_disclaimer(self):
+    def test_every_page_renders_without_notices_limitations_or_disclaimer(self):
         before = {k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}
         for name in PAGES:
             with self.subTest(page=name):
                 at = run_page(name)
                 self.assertFalse(at.exception, [e.message for e in at.exception])
                 self.assertFalse(at.error, texts(at, "error"))
-                notices = texts(at, "info") + texts(at, "warning")
-                self.assertEqual(any("frozen snapshot as of" in n for n in notices), name != "market_dashboard",
-                                 notices)
+                self.assertNotIn("frozen snapshot as of", shown_text(at))
                 self.assertNotIn(disclosures.RESEARCH_ONLY, shown_text(at))
                 self.assertNotIn("Limitations", texts(at, "subheader"))
         self.assertEqual({k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}, before)

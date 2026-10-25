@@ -18,8 +18,7 @@ def explain(col, text: str) -> None:
 
 snap = ui.page_header("Market Dashboard",
                       "Explore historical S&P 500 prices and market volatility, along with indicators used by "
-                      "our AI models to analyze market stress.",
-                      snapshot_notice=False)
+                      "our AI models to analyze market stress.")
 
 if snap is not None:
     spx, vix = snap["spx"], snap["vix"]

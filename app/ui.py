@@ -1,8 +1,8 @@
 """Streamlit helpers shared by the dashboard pages (docs/decisions.md, D21).
 
 Only presentation lives here: caching, notices and layout. Loading, integrity
-checks, texts and figures come from `fincrisis.dashboard` (loaders,
-disclosures, charts); RAG answers and the workflow come from `fincrisis.rag`
+checks and figures come from `fincrisis.dashboard` (loaders, charts); RAG
+answers and the workflow come from `fincrisis.rag`
 and `fincrisis.agents`. Nothing here writes files, downloads data or fits
 models.
 
@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from fincrisis.dashboard import charts, disclosures, loaders
+from fincrisis.dashboard import charts, loaders
 
 CODE_ROOT = loaders.PROJECT_ROOT
 # Where the data and artifacts are read from. Defaults to the project; tests point it elsewhere.
@@ -174,16 +174,12 @@ def require_local_only() -> None:
         st.stop()
 
 
-def page_header(title: str, intro: str, snapshot_notice: bool = True) -> dict | None:
-    """Title and, unless turned off, the snapshot as-of notice (a warning once it is stale)."""
+def page_header(title: str, intro: str) -> dict | None:
+    """Title and introduction; returns the verified market snapshot, or None after showing why it is unavailable."""
     require_local_only()
     st.title(title)
     st.markdown(intro)
-    snap = snapshot()
-    if snap is not None and snapshot_notice:
-        notice = disclosures.snapshot_notice(snap, settings()["agent"]["stale_after_days"])
-        (st.warning if notice.level == "warning" else st.info)(notice.text, icon=":material/calendar_today:")
-    return snap
+    return snapshot()
 
 
 def sidebar() -> None:

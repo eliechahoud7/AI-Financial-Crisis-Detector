@@ -7,9 +7,7 @@ import ui
 from fincrisis.dashboard import charts
 
 ui.page_header("Market Stress Analysis",
-               "Scores from the frozen market-stress models. The label is 1 when the S&P 500 closes at least 5% "
-               "below its running high within the next 20 sessions (D2). The models were selected on 2000-2014 "
-               "walk-forward validation and tested once on 2015-2026; nothing here is refitted.")
+               "Assess market conditions using machine learning models and historical market data.")
 
 results = ui.stress_results()
 signal = ui.current_signal()

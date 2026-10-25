@@ -7,8 +7,9 @@ import ui
 from fincrisis.dashboard import charts
 
 ui.page_header("Company Distress",
-               "Held-out test results of the company-distress baselines trained on the UCI Taiwanese Bankruptcy "
-               "dataset. This page reports frozen results only; it does not score companies.")
+               "This page presents the historical performance of machine learning models trained to identify "
+               "financial distress using company data from Taiwan. Explore their evaluation results and compare "
+               "their performance.")
 
 results = ui.distress_results()
 if results is not None:

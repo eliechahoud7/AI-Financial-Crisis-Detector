@@ -15,7 +15,7 @@ status = ui.index_status()
 if not status["ready"]:
     ui.show_index_problem(status)
 
-use_llm = st.toggle("Let the local model write the answer (Ollama)", key="rag_llm",
+use_llm = st.toggle("Use the local AI model to generate answers", key="rag_llm",
                     help=f"Uses {rag['ollama']['model']} on this computer. A generated answer is kept only if it "
                          "passes the grounding check; otherwise the extractive answer is shown.")
 if use_llm:

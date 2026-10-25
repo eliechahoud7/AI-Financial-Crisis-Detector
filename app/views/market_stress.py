@@ -15,7 +15,8 @@ signal = ui.current_signal()
 st.subheader("Latest snapshot day")
 if signal is not None:
     p, s = signal["primary"], signal.get("secondary")
-    state = "at or above its frozen threshold (signal)" if p["elevated"] else "below its frozen threshold (no signal)"
+    state = ("flags **elevated market stress**: its latest score is at or above" if p["elevated"]
+             else "assesses market conditions as **normal**: its latest score is below")
     cols = st.columns(3)
     cols[0].metric(f"{charts.label(p['name'])} score, {signal['as_of']}", f"{p['score']:.4f}",
                    f"threshold {p['threshold']:.4f}", delta_color="off")
@@ -25,10 +26,10 @@ if signal is not None:
     if s:
         cols[2].metric(f"{charts.label(s['name'])} score (uncalibrated)", f"{s['score']:.3f}",
                        f"threshold {s['threshold']:.3f}: {'signal' if s['elevated'] else 'no signal'}", delta_color="off")
-    st.markdown(f"The primary model is **{state}**. On the held-out test, its average precision was "
-                f"{p['test_average_precision']:.3f} against a base rate of {signal['test_prevalence']:.3f}; at the "
-                f"threshold, precision was {p['test_precision_at_threshold']:.2f} and recall "
-                f"{p['test_recall_at_threshold']:.2f}. A signal is weak evidence, not a forecast.")
+    st.markdown(f"The primary model currently {state} the level it uses to raise a stress signal. It is built to "
+                "give early warning of market stress, and in historical testing it flagged "
+                f"{p['test_recall_at_threshold']:.0%} of the trading days followed within about a month by a fall "
+                "of at least 5% from the market's high.")
     for warning in signal["warnings"]:
         st.warning(warning, icon=":material/schedule:")
 

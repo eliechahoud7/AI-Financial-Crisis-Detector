@@ -16,6 +16,8 @@ import unittest.mock
 from datetime import date
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import yaml
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -336,6 +338,39 @@ class TestDisclosures(unittest.TestCase):
         self.assertIn("0.30", text)
         self.assertIn("non-commercial", text)
         self.assertNotIn("non-commercial", " ".join(dis.rag_limitations({**rag, "ollama": {"model": "other"}})))
+
+    def test_market_overview_describes_conditions_against_history(self):
+        days = pd.bdate_range("2000-01-03", periods=300)
+        spx = pd.Series(100 * np.cumprod([1.0] + [1.001, 0.999] * 149 + [1.05]), index=days)  # big last-day rise
+        vix = pd.Series(np.r_[np.full(299, 15.0), 40.0], index=days)
+        features = pd.DataFrame({"drawdown_252": np.r_[np.full(299, -0.05), -0.25],
+                                 "downside_vol_20": np.r_[np.full(299, 0.1), 0.01]}, index=days)
+        lines = dis.market_overview(spx, vix, features)
+        self.assertEqual(lines, [
+            "On its latest trading day the S&P 500 rose by more than on most days.",
+            "The VIX is higher than on 100% of trading days since 2000, so investors expect stock price swings "
+            "over the next month or so to be larger than usual.",
+            "The index is at least 20% below its high of the past year, a fall often called a bear market.",
+            "Over the last 20 trading days, its down days have been milder than usual compared with any 20-day "
+            "stretch since 2000."])
+        self.assertTrue(all(" will " not in line for line in lines))  # observations, not forecasts
+        for drawdown, phrase in ((-0.12, "called a correction"), (-0.05, "less than the 10% fall"),
+                                 (-0.01, "at or close to its highest level")):
+            frame = features.assign(drawdown_252=np.r_[features["drawdown_252"].iloc[:-1], drawdown])
+            self.assertIn(phrase, dis.market_overview(spx, vix, frame)[2])
+        flat = spx.copy()
+        flat.iloc[-1] = flat.iloc[-2]
+        self.assertEqual(dis.market_overview(flat, vix, None)[0], "On its latest trading day the S&P 500 was unchanged.")
+
+    def test_market_overview_leaves_out_what_is_missing(self):
+        days = pd.bdate_range("2000-01-03", periods=5)
+        spx, vix = pd.Series([100.0, 101, 102, 101, 100], index=days), pd.Series([15.0, 16, 17, 18, 19], index=days)
+        self.assertEqual(len(dis.market_overview(spx, vix, None)), 2)  # no features: S&P 500 and VIX only
+        empty = pd.DataFrame({"drawdown_252": np.nan, "downside_vol_20": np.nan}, index=days)  # warm-up rows only
+        self.assertEqual(len(dis.market_overview(spx, vix, empty)), 2)
+        none = pd.Series(dtype=float)
+        self.assertEqual(dis.market_overview(none, none, None), [])
+        self.assertEqual(len(dis.market_overview(spx.iloc[:2], vix.iloc[:1], None)), 0)
 
     def test_research_only_matches_the_workflow_disclaimer(self):
         from fincrisis.agents.graph import DISCLAIMER

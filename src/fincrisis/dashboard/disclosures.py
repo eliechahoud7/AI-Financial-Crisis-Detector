@@ -8,6 +8,8 @@ is the workflow's disclaimer (D17), so the CLI and the dashboard say the same.
 from dataclasses import dataclass
 from datetime import date
 
+import pandas as pd
+
 from fincrisis.agents.graph import DISCLAIMER
 from fincrisis.dashboard.loaders import ArtifactError, snapshot_age_days
 
@@ -104,6 +106,57 @@ def market_data_limitations(snapshot: dict) -> list[str]:
         "These are historical observations, not forecasts.",
     ]
     return lines + [f"Snapshot check: {warning}" for warning in snapshot.get("warnings", [])]
+
+
+CORRECTION, BEAR_MARKET = -0.10, -0.20   # conventional names for a 10% and a 20% fall from a high
+
+
+def _share_below(history: pd.Series, value: float) -> float:
+    """Share of past observations below `value`: where today sits in the market's own history."""
+    return float((history < value).mean())
+
+
+def _relative(share: float, low: str, typical: str, high: str) -> str:
+    return low if share < 1 / 3 else high if share > 2 / 3 else typical
+
+
+def market_overview(spx: pd.Series, vix: pd.Series, features: pd.DataFrame | None) -> list[str]:
+    """Plain-language sentences on the latest market conditions, each placed against the snapshot's own history.
+
+    Describes what has been observed; nothing here is a forecast. A sentence whose inputs are missing is left out.
+    """
+    sentences = []
+    spx, vix = spx.dropna(), vix.dropna()
+    if len(spx) >= 3:
+        moves = spx.pct_change().dropna()
+        change, size = moves.iloc[-1], _share_below(moves.abs(), abs(moves.iloc[-1]))
+        direction = "rose" if change > 0 else "fell" if change < 0 else "was unchanged"
+        scale = "" if change == 0 else " " + _relative(size, "by less than on a typical day",
+                                                       "by about as much as on a typical day",
+                                                       "by more than on most days")
+        sentences.append(f"On its latest trading day the S&P 500 {direction}{scale}.")
+    if len(vix) >= 2:
+        share = _share_below(vix, vix.iloc[-1])
+        expect = _relative(share, "calmer than usual", "about as large as usual", "larger than usual")
+        sentences.append(f"The VIX is higher than on {share:.0%} of trading days since {vix.index[0].year}, so "
+                         f"investors expect stock price swings over the next month or so to be {expect}.")
+    complete = None if features is None else features[["drawdown_252", "downside_vol_20"]].dropna()
+    if complete is not None and len(complete) >= 2:
+        drawdown, downside = complete.iloc[-1]
+        if drawdown <= BEAR_MARKET:
+            place = "at least 20% below its high of the past year, a fall often called a bear market"
+        elif drawdown <= CORRECTION:
+            place = "at least 10% below its high of the past year, a fall often called a correction"
+        elif drawdown > -0.02:
+            place = "at or close to its highest level of the past year"
+        else:
+            place = "somewhat below its high of the past year, but less than the 10% fall often called a correction"
+        sentences.append(f"The index is {place}.")
+        share = _share_below(complete["downside_vol_20"], downside)
+        sentences.append("Over the last 20 trading days, its down days have been "
+                         + _relative(share, "milder than usual", "about as rough as usual", "rougher than usual")
+                         + f" compared with any 20-day stretch since {complete.index[0].year}.")
+    return sentences
 
 
 def workflow_limitations() -> list[str]:

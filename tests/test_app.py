@@ -121,6 +121,15 @@ class TestPagesOnFrozenOutputs(AppCase):
         self.assertEqual(len(explanations), 4, texts(at, "caption"))
         self.assertIn("means it fell by 0.52% from the day before", explanations[0])
 
+    def test_market_dashboard_ends_with_the_overview_summary(self):
+        at = run_page("market_dashboard")
+        self.assertEqual(texts(at, "subheader")[-1], "Market overview summary")
+        snap = ld.market_snapshot(PROJECT_ROOT, SETTINGS["paths"])
+        expected = " ".join(disclosures.market_overview(snap["spx"], snap["vix"], ld.market_features(snap)[0]))
+        self.assertEqual(texts(at, "markdown")[-1], expected)
+        last_block = list(at.main.children.values())[-1]  # the bordered summary, below both charts and their tables
+        self.assertEqual([s.value for s in last_block.subheader], ["Market overview summary"])
+
     def test_chart_pages_draw_their_charts(self):
         for name, minimum in (("market_dashboard", 2), ("market_stress", 6), ("company_distress", 5)):
             with self.subTest(page=name):

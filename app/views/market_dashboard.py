@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 import ui
-from fincrisis.dashboard import charts
+from fincrisis.dashboard import charts, disclosures
 
 EXPLANATION_RED = "#e8918b" if ui.dark_mode() else "#a94442"  # muted red, at least 4.5:1 contrast in either theme
 
@@ -55,3 +55,11 @@ if snap is not None:
                                   "downside_vol_20": "20-day downside volatility"}))
         ui.chart(charts.drawdown_and_volatility, features, table=table.sort_values("date", ascending=False),
                  key="drawdown", config=toolbar)
+
+    overview = disclosures.market_overview(spx, vix, features)
+    if overview:
+        with st.container(border=True):
+            st.subheader("Market overview summary")
+            st.markdown(" ".join(overview))
+            st.caption("Each comparison is with the market's own history in the snapshot; it describes what has "
+                       "happened, not what will happen.")

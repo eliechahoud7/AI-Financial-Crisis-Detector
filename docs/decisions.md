@@ -1077,3 +1077,34 @@ if the decision changes.
   launcher can leave the server running, and a dashboard server from an
   earlier session had kept running on 127.0.0.1:8501 that way. It was
   stopped, and the live test now stops the whole process tree.
+
+---
+
+## D28. One QA command (Phase H, step 7)
+
+- **Date:** 2026-10-25
+- **Decision:** `scripts/run_qa.py` (logic in `src/fincrisis/qa/runner.py`)
+  runs five read-only stages and prints one pass/fail line for each; exit
+  code 1 if any fails:
+  1. **environment** (`src/fincrisis/qa/environment.py`, new): every package
+     in `requirements-lock.txt` is installed at exactly its locked version.
+     This names the cause when a library change alters results (which D23
+     would detect). Installed packages that are not locked are listed only;
+  2. **integrity** (D22);
+  3. **reproducibility** (D23);
+  4. **rag regression** (D25);
+  5. **tests**: the unit-test suite, in a separate process.
+- **Options:** `--quick` skips the test suite; `--live` also runs the live
+  Ollama (D26) and dashboard-server (D27) tests; `--json` prints every check.
+  A stage that crashes fails the run without hiding the other stages.
+- **State at this decision:** all 182 locked packages are installed at their
+  locked versions, with nothing unlocked; every stage passes.
+- **Tests:** `tests/test_qa_runner.py` (the environment check on a synthetic
+  lock file, parsing the test summary, the live switches, a failing or
+  crashing stage, and a quick run on the project). The test stage is checked
+  with a stubbed process, so the suite never runs itself.
+- **Phase H summary:** integrity (D22), reproducibility (D23), the
+  validation-set guard (D24), RAG regression (D25), Ollama failures (D26),
+  scripts and dashboard reruns (D27), and this command (D28). The test suite
+  grew from 224 to about 300 tests, and nothing was retrained, re-evaluated
+  or tuned.

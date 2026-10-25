@@ -94,6 +94,29 @@ Dependency ranges are declared in `pyproject.toml`, and exact versions are in
 if it is absent. For the full data and model pipeline, see
 `docs/model_card.md` (section 12).
 
+## Quality checks
+
+One command runs every read-only check and the test suite, with a pass/fail line per stage
+(D22–D28). Run it from the project root:
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts\run_qa.py            # everything (about 5 minutes on CPU)
+.\.venv\Scripts\python.exe -B scripts\run_qa.py --quick    # the checks only, without the test suite
+.\.venv\Scripts\python.exe -B scripts\run_qa.py --live     # also the live Ollama and dashboard-server tests
+```
+
+| Stage | Checks | Script |
+|---|---|---|
+| environment | installed packages match `requirements-lock.txt` | `run_qa.py` |
+| integrity | frozen data, results, models and the RAG validation set match recorded checksums | `verify_integrity.py` |
+| reproducibility | today's code reproduces the frozen features, target, model scores and latest signal | `check_reproducibility.py` |
+| rag regression | development-set retrieval does not fall below its baseline; reference answers are unchanged | `check_rag_regression.py` |
+| tests | the unit-test suite | `python -m unittest discover -s tests` |
+
+Nothing is trained, downloaded or rebuilt. After editing an indexed document, rebuild the index,
+run `scripts\check_rag_regression.py`, review any change it reports, and only then re-record the
+baselines with `--update`.
+
 ## Asking questions about the project documents (RAG)
 
 Retrieval and answering run locally on CPU (see `docs/decisions.md`, D14).

@@ -33,6 +33,7 @@ yfinance / UCI dataset
 | Evaluation | `src/fincrisis/evaluation/` | Chronological splits, metrics, baselines |
 | RAG | `src/fincrisis/rag/` | Document ingestion, embeddings, retrieval with citations, optional local LLM |
 | Agents | `src/fincrisis/agents/` | LangGraph workflow routing questions to the market signal, distress results, or documents (D17) |
+| QA | `src/fincrisis/qa/` | Read-only integrity, reproducibility, RAG regression, environment and validation-set checks; `scripts/run_qa.py` runs them all (D22–D28) |
 | Scripts | `scripts/` | Reproducible command-line pipeline steps |
 | Dashboard logic | `src/fincrisis/dashboard/` | Read-only, integrity-checked loaders, disclosure texts, Plotly chart builders (D18–D20) |
 | App | `app/` | Streamlit entry point (`streamlit_app.py`), five pages (`views/`) and presentation helpers (`ui.py`); reads saved artifacts, never trains (D21) |

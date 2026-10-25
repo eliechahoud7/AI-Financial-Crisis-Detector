@@ -1043,3 +1043,37 @@ if the decision changes.
   - an opt-in live test against the configured local model, run only when
     `FINCRISIS_LIVE_OLLAMA=1` is set. It checks structure and that an
     accepted answer passes the grounding check, not the wording.
+
+---
+
+## D27. Script tests and dashboard rerun tests (Phase H, step 6)
+
+- **Date:** 2026-10-25
+- **Problem:** `build_rag_index.py`, `ask_rag.py`,
+  `download_taiwan_bankruptcy.py` and `inspect_taiwan_bankruptcy.py` had no
+  tests, and the dashboard was not tested across reruns, with a stale
+  snapshot, without the embedding model, or as a running server.
+- **Tests:**
+  - `tests/test_scripts.py` runs each script in a temporary project folder:
+    - building the index, refusing to overwrite without `--force`, a
+      missing embedding model and no documents (nothing written);
+    - `ask_rag.py`: an answer with sources, `--json`, abstention with the
+      threshold shown, an unavailable local model, and a stale index
+      (exit code 1);
+    - the Taiwan download with the network replaced by an in-memory zip:
+      checksums recorded, only the named archive member read (an archive
+      member `../evil.txt` is not extracted), an existing download never
+      touched without `--force`, invalid downloads writing nothing;
+    - the Taiwan inspection on a copy of the raw data: reports written, raw
+      data unchanged, no overwrite, an altered dataset refused.
+  - `tests/test_app_reruns.py`: a frozen output altered after a page has
+    loaded is refused on the next rerun; the stale-snapshot warning appears
+    on the pages; the RAG page explains a missing embedding model; and an
+    opt-in live test (`FINCRISIS_LIVE_SERVER=1`) starts the real server from
+    the project root, checks that it listens only on loopback addresses and
+    answers, and then stops the whole process tree.
+- **Found while testing:** on Windows the virtual environment's `python.exe`
+  starts the real interpreter as a child process. Stopping only the
+  launcher can leave the server running, and a dashboard server from an
+  earlier session had kept running on 127.0.0.1:8501 that way. It was
+  stopped, and the live test now stops the whole process tree.

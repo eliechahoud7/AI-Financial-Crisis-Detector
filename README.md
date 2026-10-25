@@ -87,7 +87,8 @@ py -3.12 -m venv .venv
 ```
 
 Set `FINCRISIS_LIVE_OLLAMA=1` to include the test against the local Ollama model
-(it needs Ollama running with `qwen2.5:3b`; other Ollama tests use a stand-in server).
+(it needs Ollama running with `qwen2.5:3b`; other Ollama tests use a stand-in server), and
+`FINCRISIS_LIVE_SERVER=1` to start the real dashboard server once and check it is local-only.
 Dependency ranges are declared in `pyproject.toml`, and exact versions are in
 `requirements-lock.txt`. Tests that need the downloaded dataset are skipped
 if it is absent. For the full data and model pipeline, see

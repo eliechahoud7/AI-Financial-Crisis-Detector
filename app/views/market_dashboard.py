@@ -15,14 +15,25 @@ if snap is not None:
     spx, vix = snap["spx"], snap["vix"]
     features = ui.features()
     cols = st.columns(4)
+    day_change = spx.iloc[-1] / spx.iloc[-2] - 1
     cols[0].metric(f"S&P 500 close, {spx.index[-1].date()}", f"{spx.iloc[-1]:,.2f}",
-                   f"{spx.iloc[-1] / spx.iloc[-2] - 1:+.2%} on the day", delta_color="off")
+                   f"{day_change:+.2%} on the day", delta_color="off")
+    cols[0].caption("Tracks 500 large US companies; this is its value when trading ended that day. "
+                    f"{day_change:+.2%} means it {'fell' if day_change < 0 else 'rose'} by "
+                    f"{abs(day_change):.2%} from the day before.")
     cols[1].metric(f"VIX close, {vix.index[-1].date()}", f"{vix.iloc[-1]:.2f}",
                    f"{vix.iloc[-1] - vix.iloc[-2]:+.2f} points", delta_color="off")
+    cols[1].caption("How much investors expect US stocks to move over the next 30 days or so. Higher means "
+                    "more uncertainty expected, not that a crash is coming.")
     if features is not None:
         last = features.dropna().iloc[-1]
         cols[2].metric("Below 252-session high", f"{last['drawdown_252']:.1%}")
+        cols[2].caption("Compares the S&P 500 today with its highest close of roughly the past year. "
+                        f"{last['drawdown_252']:.1%} means it is {abs(last['drawdown_252']):.1%} below that high.")
         cols[3].metric("20-day downside volatility", f"{last['downside_vol_20']:.1%}", help="Annualized (D12).")
+        cols[3].caption("How large the market's daily drops have been over the last 20 trading days, scaled to a "
+                        f"yearly rate. Higher means rougher down days; {last['downside_vol_20']:.1%} is not a "
+                        "forecast of a fall that size.")
 
     # Hide the Zoom, Pan, Autoscale and Reset axes buttons; hover tooltips are unaffected.
     toolbar = {"modeBarButtonsToRemove": ["zoom2d", "pan2d", "autoScale2d", "resetScale2d"]}

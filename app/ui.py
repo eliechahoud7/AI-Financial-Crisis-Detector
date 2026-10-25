@@ -128,10 +128,15 @@ def dark_mode() -> bool:
         return False
 
 
+# Plotly toolbar without Zoom, Pan, Autoscale and Reset axes; hover, legends and the other buttons are kept.
+TOOLBAR = {"modeBarButtonsToRemove": ["zoom2d", "pan2d", "autoScale2d", "resetScale2d"]}
+
+
 def figure(fig, table: pd.DataFrame | None = None, key: str | None = None, caption: str | None = None,
            config: dict | None = None) -> None:
     """Show a chart in the current theme, with an optional table view of the same numbers."""
-    st.plotly_chart(charts.themed(fig, dark_mode()), theme=None, key=key, width="stretch", config=config)
+    st.plotly_chart(charts.themed(fig, dark_mode()), theme=None, key=key, width="stretch",
+                    config=TOOLBAR if config is None else config)
     if caption:
         st.caption(caption)
     if table is not None:

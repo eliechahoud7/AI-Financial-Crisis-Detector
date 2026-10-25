@@ -200,12 +200,6 @@ def sidebar() -> None:
     with st.sidebar:
         st.markdown("**AI Financial Crisis Detector**")
         st.caption("Local research dashboard. Read-only: it never downloads data, trains models or rebuilds indexes.")
-        try:
-            snap = _snapshot(fingerprint(f"{paths()['raw_data']}/market"), str(DATA_ROOT))
-            age = loaders.snapshot_age_days(snap["as_of"])
-            st.caption(f"Market snapshot as of **{snap['as_of']}** ({age} day{'' if age == 1 else 's'} old).")
-        except loaders.ArtifactError:
-            st.caption("Market snapshot unavailable.")
 
 
 # ----------------------------------------------------------------------------- documents and workflow

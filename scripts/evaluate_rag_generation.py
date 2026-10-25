@@ -4,6 +4,9 @@ Usage:
     python scripts/evaluate_rag_generation.py            # stop if a report exists
     python scripts/evaluate_rag_generation.py --force
 
+The development set (rag.eval_set) is the default. The validation set is
+refused unless --final-validation is given (D16, D24).
+
 For every question, records whether the local model's answer was accepted
 (passed the grounding checks), rejected (extractive answer used instead),
 or replaced by "insufficient evidence" (by the retrieval threshold or by the
@@ -18,8 +21,8 @@ import json
 import statistics
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
+from fincrisis.qa import validation_guard as guard
 from fincrisis.rag import answer as ans
 from fincrisis.rag import evaluation as ev
 from fincrisis.rag import index as idx
@@ -113,12 +116,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--force", action="store_true", help="overwrite an existing report")
     parser.add_argument("--questions", help="question set (default: rag.eval_set, the development set)")
+    parser.add_argument("--final-validation", action="store_true",
+                        help="allow the validation set, only to repeat the final check (D16, D24)")
     args = parser.parse_args()
     settings = pipeline.load_rag_settings()
     root, o = pipeline.PROJECT_ROOT, settings["ollama"]
     out_dir = root / settings["reports_dir"]
+    try:  # before the Ollama server, the index or the model is touched
+        question_path, suffix = guard.resolve_question_set(args.questions, settings["eval_set"], root,
+                                                           args.final_validation)
+    except guard.QuestionSetError as error:
+        print(f"Refused: {error}")
+        return 2
     question_file = args.questions or settings["eval_set"]
-    suffix = "" if question_file == settings["eval_set"] else "_" + Path(question_file).stem
     outputs = [out_dir / f"generation_eval{suffix}.json", out_dir / f"generation_eval{suffix}.md"]
     if any(p.exists() for p in outputs) and not args.force:
         print(f"Report already exists in {out_dir}. Nothing was written. Use --force to overwrite.")
@@ -132,7 +142,7 @@ def main() -> int:
     except (RuntimeError, idx.RAGIndexError) as error:
         print(f"Failed: {error}")
         return 1
-    questions = json.loads((root / question_file).read_text(encoding="utf-8"))["questions"]
+    questions = json.loads(question_path.read_text(encoding="utf-8"))["questions"]
     generator = ans.ollama_generator(o["model"], o["url"], o["timeout_seconds"], o["options"], settings["max_answer_sentences"])
     print(f"Generating answers for {len(questions)} questions with {o['model']} (this takes a while on CPU)")
     retriever = pipeline.make_retriever(store, settings)

@@ -129,8 +129,9 @@ The evaluation scripts use the development questions
 (`knowledge_base/eval/retrieval_questions.json`) by default. `--questions`
 selects another set; the validation set
 (`knowledge_base/eval/validation_questions.json`) has already been used, so
-do not tune settings against it. Write a new held-out set for any further
-tuning.
+do not tune settings against it. The scripts refuse it (including renamed
+copies) unless `--final-validation` is given, and then only if it still matches
+its recorded checksum (D24). Write a new held-out set for any further tuning.
 
 Add your own `.md` or `.txt` documents under `knowledge_base/documents/`,
 then rebuild with `--force`. The index refuses to load if any source has

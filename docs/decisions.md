@@ -941,3 +941,35 @@ if the decision changes.
   feature changed by one part in 10^12, a changed target threshold, models
   shifted by 1e-4, reordered test rows, a diverging latest-day score) and
   checks that it is reported, and that float32-sized differences are not.
+
+---
+
+## D24. Guard on the RAG validation set (Phase H, step 3)
+
+- **Date:** 2026-10-25
+- **Problem:** the rule that the validation set is used once and never for
+  tuning (D16) was only a convention. `scripts/evaluate_rag.py` and
+  `scripts/evaluate_rag_generation.py` ran on it whenever given its path, and
+  neither script had tests.
+- **Decision:** both scripts resolve their question set through
+  `src/fincrisis/qa/validation_guard.py` before touching the index, the
+  embedding model or the Ollama server:
+  - the development set (`rag.eval_set`) is the default, as before;
+  - the validation set is recognised by its path or by its content (a
+    renamed copy, with either line ending, is recognised too) and refused
+    unless `--final-validation` is given;
+  - with `--final-validation`, it must still match its checksum in
+    `config/frozen_artifacts.json` (D22), and the flag is refused for any
+    other question set;
+  - if the recorded checksum is unavailable, evaluation is refused rather than
+    allowed.
+
+  A refusal prints the reason and exits with code 2; nothing is written.
+- **Not covered:** an edited copy of the validation set no longer matches its
+  checksum and would not be recognised. The guard prevents accidental reuse,
+  not deliberate circumvention.
+- **Tests:** `tests/test_eval_scripts.py` runs both scripts on a synthetic
+  corpus in a temporary folder (fake embeddings and a fake local model): the
+  development-set reports, keeping an existing report, an invalid question
+  set, Ollama unavailable, and the refusals, which happen before the index or
+  Ollama is touched. The project's reports are not written.

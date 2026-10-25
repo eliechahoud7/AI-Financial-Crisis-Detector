@@ -10,6 +10,7 @@ altered or stale index is refused.
 
 import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -44,11 +45,13 @@ class FaissStore(VectorStore):
         return self._embedding
 
     @classmethod
-    def from_documents(cls, documents: list[Document], embedding, include_section: bool = False, **kwargs) -> "FaissStore":
-        """Embed each chunk's text, optionally prefixed with its section heading path (D16)."""
+    def from_documents(cls, documents: list[Document], embedding, include_section: bool = False,
+                       mask: bool = False, **kwargs) -> "FaissStore":
+        """Embed each chunk's text, optionally prefixed with its section heading path (D16), and with long hex
+        digests replaced by a placeholder (D33)."""
         if not documents:
             raise RAGIndexError("no chunks to index")
-        vectors = _normalized(embedding.embed_documents([embedding_text(d, include_section) for d in documents]))
+        vectors = _normalized(embedding.embed_documents([embedding_text(d, include_section, mask) for d in documents]))
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
         return cls(embedding, index, list(documents))
@@ -93,11 +96,26 @@ class FaissStore(VectorStore):
         return cls(embedding, index, [Document(page_content=c["text"], metadata=c["metadata"]) for c in chunks])
 
 
-def embedding_text(document: Document, include_section: bool) -> str:
+DIGEST = re.compile(r"\b[0-9a-fA-F]{32,}\b")  # SHA-256, MD5 and full git hashes; short git ids are kept
+DIGEST_PLACEHOLDER = "<sha256>"
+
+
+def mask_digests(text: str) -> str:
+    """Text with long hex digests replaced by a placeholder, for what the models read (D33).
+
+    A 64-character digest is about 45 tokens of noise to the embedding model
+    and the reranker. The stored chunk text, the evidence and the citations
+    keep the real digests.
+    """
+    return DIGEST.sub(DIGEST_PLACEHOLDER, text)
+
+
+def embedding_text(document: Document, include_section: bool, mask: bool = False) -> str:
     section = document.metadata.get("section", "")
+    text = mask_digests(document.page_content) if mask else document.page_content
     if include_section and section and section != "(no heading)":
-        return f"{section}\n{document.page_content}"
-    return document.page_content
+        return f"{section}\n{text}"
+    return text
 
 
 def sha256_file(path: Path) -> str:

@@ -1394,3 +1394,182 @@ if the decision changes.
   - the evaluation modes, and a configured mode without a baseline must be
     reviewed;
   - the real model ranks a relevant passage above an unrelated one.
+
+---
+
+## D32. Extractive sentences chosen by the reranker, continued in context
+
+- **Date:** 2026-10-25. **Status:** current implementation, measured on the
+  development set only. The RAG baselines (D25) were re-recorded for it, and
+  for D33, after review on 2026-10-25.
+- **Problem (audit):** the extractive answer picked the sentences most
+  similar to the question by embedding. That favours sentences that repeat
+  the question's words over sentences that answer it: the D2 definition
+  lost to a sentence about what trading days are.
+- **Decision:**
+  - **Scoring (`rag.sentence_selection: reranker`):** the cross-encoder of
+    D31 scores every candidate sentence of the evidence passages, each read
+    after its passage's `source - section path`, the format it reads for
+    passages.
+  - **Continuation (`rag.sentence_continuation: all`):**
+    - the best-scoring sentence opens the answer;
+    - the sentences that follow it in its own passage come next, whatever
+      their scores;
+    - the next-best sentences of all passages fill the rest, up to
+      `max_answer_sentences` (3);
+    - each sentence is cited to its passage.
+
+    Scored on their own, the steps and qualifications that complete a rule
+    lose to sentences that repeat the question's words. Continuation keeps
+    them.
+  - **Variants:** one at each stage, decided before measuring. There are no
+    weights.
+  - **Scope:** mode `rerank` only. The workflow's section-scoped context
+    (D17) keeps embedding selection.
+- **Unchanged:** the refusal gate, `top_k`, the evidence passages, the
+  candidate sentences (`answer.sentences`), the citations, the prompt, the
+  grounding checks and the generated-answer path. `sentence_selection:
+  embedding` restores the D14 behaviour.
+- **How the design was reached:**
+  1. **Score order alone** (the first version of this decision): a
+     test-requirement sentence from D11 repeats nearly every word of the
+     VIX-timing questions. It replaced D11's alignment step about VIX-only
+     dates in the VIX reference answer and in q05.
+  2. **Continuation** fixed both, and is kept.
+  3. **Relevance boundary** (one approved experiment, rejected): continue
+     only with sentences scored above 0, the cross-encoder's own boundary.
+     - **Why it failed:** read out of context, the cross-encoder scores many
+       useful continuation sentences far below 0. Among them are the
+       bootstrap method for q24, the licence line for q19, the yfinance
+       caveats for q04, and D11's alignment step (-1.30).
+     - **Effect:** it brought the VIX regression back, and raised the
+       irrelevant sentences in the changed answers from 14 to 22 by manual
+       count.
+     - **Status:** the code remains (`sentence_continuation: relevant`) but
+       must not be used.
+- **Results (development set only, 26 answerable questions; the validation
+  set was not used):**
+
+  | Measure | Embedding (D14) | Score order | Continuation (kept) | Boundary (rejected) |
+  |---|---|---|---|---|
+  | Answer contains an expected phrase | 8 | 11 | 12 | 11 |
+  | First sentence contains it | 3 | 8 | 8 | 8 |
+  | Answer cites a relevant passage | 16 | 17 | 14 | 17 |
+
+  - **Refusals:** unchanged in every variant. Sentence selection does not
+    affect the gate; 3 of the 6 unanswerable questions are refused.
+  - **Manual review, continuation against score order** (all changed
+    answers): 11 better (q01, q04, q05, q08, q09, q11, q16, q18, q19, q24,
+    q25), 5 worse (q02, q06, q07, q17, q23), the rest equal.
+  - **Gains over score order:**
+    - q18 now gives the reason (`row_id 2499`);
+    - q24 now names the circular block bootstrap;
+    - q19 now includes the licence line;
+    - q11 now says the label meanings remain unverified.
+  - **Lower citation count:** "cites a relevant passage" falls because
+    answers now draw more on one passage.
+- **Known regressions (continuation, the current implementation):**
+  - **q06:** loses its answer. Its best sentence (why VIX is lagged) is
+    followed in its passage by lag reasoning, which displaces D11's
+    alignment step that score order took from another passage.
+  - **q02, q07 and q23:** continuation runs into unrelated sentences of the
+    same passage: a disclaimer, a row count, "Yahoo Finance data is
+    unofficial".
+  - **q17:** slightly worse; it drops the sentence stating that 24 features
+    contain values above 1.
+  - **q22:** not answered. The model-files lead-in sits in a chunk that
+    ranks 30th, outside the 20 reranker candidates. That lead-in also ends
+    in ":", so it is not a candidate sentence. Embedding selection had
+    included the path only through a bare file-path line from another
+    section. This is a retrieval and segmentation problem. D33 fixed the
+    retrieval half; the rest is accepted as a documented limitation for
+    now.
+  - **VIX reference answers (RAG and workflow):** D11's full procedure
+    (rule, alignment step naming the VIX-only dates 2026-05-25 and
+    2026-09-07, shift) replaces the dataset report's line on VIX-only
+    dates. The answers now cite D11 only; the dataset report is no longer
+    cited.
+- **RAG reference answers (D25):** reviewed and re-recorded with exactly
+  three differences. Status, refusals and routes are unchanged, and the
+  other five reference answers are identical.
+  - **VIX reference answer (RAG):** the rule, D11's alignment step and the
+    shift; cites D11 only, as above.
+  - **The same answer from the workflow:** the same change.
+  - **Label-horizon answer (the one citing D2):** opens with the
+    definition, followed by D2's two sentences on the forward running peak.
+    It now cites one D2 passage instead of two.
+- **Other weakness:** table header rows count as candidate sentences and
+  are sometimes chosen (q07). Candidate filtering was not changed.
+- **Caution:** measured on the development set only, like D30 and D31.
+- **Tests:** `tests/test_rerank.py` covers:
+  - the scorer chooses the sentences and the citations follow;
+  - each sentence is read after its passage's source and section;
+  - continuation after the best sentence, and the fallback when nothing
+    follows it;
+  - the rejected boundary variant, and that the setting is validated and
+    configured as `all`;
+  - without a scorer, embedding selection is unchanged;
+  - section-scoped context does not use the scorer;
+  - the scorer is attached only when configured, in rerank mode;
+  - with the real model, the D2 definition outscores the sentence that
+    repeats the question.
+
+---
+
+## D33. Hex digests read as a placeholder by the models
+
+- **Date:** 2026-10-25. **Status:** current implementation, measured on the
+  development set only. The RAG baselines (D25) were re-recorded after
+  review together with D32; masking itself changed no reference answer.
+- **Problem (q22, D32):** the model-card passage stating where the
+  company-distress model files are saved is 55% SHA-256 digests by tokens
+  (137 of 251): three 64-character checksums in a table. The digests
+  swamp its embedding, so it scored 0.320, below the 20th dense candidate
+  (0.359), ranked 30th, and never reached the reranker.
+- **Decision (`rag.retrieval.mask_digests: true`):** hex strings of 32 or
+  more characters are replaced by `<sha256>` in what the models read:
+  - the text embedded for the index;
+  - the passages the reranker reads (D31);
+  - the sentences it scores (D32).
+
+  The stored chunk text, the evidence, the citations and the grounding
+  checks keep the real digests, and an answer quotes them as written.
+  - **Kept:** short git ids such as `1a96172` are not masked.
+  - **Manifest:** records the setting. An index built with the other
+    setting, or before D33 (treated as unmasked), is refused, as for
+    `embed_section_headings`.
+  - **Token counts:** D30 chunking still counts the unmasked text, which is
+    longer, so no chunk can exceed the model's limit.
+- **Not done (held):** keeping colon-terminated lead-ins that introduce a
+  table or code block as candidate sentences. Simulated with this change,
+  q22 was still not answered: the lead-in scores -0.62 against 3.70 for a
+  sentence of the neighbouring passage, which opens the answer and is
+  continued (D32). It would also add about 15 table captions as
+  candidates.
+- **Exposure:** 6 of the 309 chunks contain digests (median 34% of their
+  tokens).
+- **Results (development set only; the same 312 chunks unmasked and
+  masked; the validation set was not used):**
+  - **Configured rerank mode:** retrieval unchanged (hit@1 0.462, hit@3
+    0.731, hit@5 0.846, MRR 0.596); so are the lexical and hybrid modes.
+  - **Dense mode (reported only):** q08 moves from rank 3 to 4, so hit@3
+    goes from 0.577 to 0.538 and MRR from 0.428 to 0.424.
+  - **Answers:** no development answer and no refusal changes.
+  - **q22:** the model-files passage now reaches the evidence (third of
+    four), but the answer is unchanged. Its lead-in is not a candidate
+    sentence, and the answer continues from the first passage (D32). q22
+    remains a known regression until the held lead-in change, or another
+    approved design, is evaluated.
+- **Risk:** dense and reranked search can no longer match a digest's value;
+  lexical and hybrid search, which read the raw text, still can.
+- **Tests:** `tests/test_digests.py` covers:
+  - which strings are masked (SHA-256, MD5, full git hashes, upper case)
+    and which are kept (short git ids, 31 characters);
+  - the embedded text is masked while the stored text keeps the digest;
+  - the reranker and the sentence scorer read masked text, and the evidence
+    and the answer keep the digest;
+  - the setting reaches the retriever;
+  - an index built with the other setting, or before D33, is refused by
+    `open_store` and reported by the dashboard;
+  - on the project index, the model-files passage reaches the reranker's
+    candidates.

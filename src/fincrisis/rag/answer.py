@@ -18,6 +18,8 @@ import urllib.request
 
 import numpy as np
 
+from fincrisis.rag.index import mask_digests
+
 INSUFFICIENT = "The indexed documents do not contain enough evidence to answer this question."
 CITATION = re.compile(r"\[(\d+)\]")
 
@@ -125,19 +127,48 @@ def sentences(text: str) -> list[str]:
     return out
 
 
-def extractive_answer(question: str, evidence: list[dict], embeddings, max_sentences: int) -> tuple[str, list[int]]:
-    """Pick the evidence sentences most similar to the question; return text with [n] markers and cited ranks."""
-    candidates = [(e["rank"], s) for e in evidence for s in sentences(e["text"])]
+def extractive_answer(question: str, evidence: list[dict], embeddings, max_sentences: int,
+                      scorer=None, relevant_continuation: bool = False, mask: bool = False) -> tuple[str, list[int]]:
+    """Pick the best evidence sentences for the question; return text with [n] markers and cited ranks.
+
+    By default a sentence's score is its embedding similarity to the question
+    (D14), and the highest-scoring sentences are the answer. With a `scorer`
+    (D32), the cross-encoder reranker scores each sentence, read after its
+    passage's source and section, for how well it answers the question. The
+    best one opens the answer, and the sentences that follow it in its passage
+    come next: scored on their own, the steps and qualifications that complete
+    a rule lose to sentences that merely repeat the question's words. Only then
+    are the next-best sentences used.
+
+    With `relevant_continuation`, a following sentence is used only if its
+    cross-encoder score is above 0, the model's own boundary between relevant
+    and not relevant (a probability of 0.5). Sentences at or below it are
+    skipped, and the rest of the passage is still read. The best sentence
+    always opens the answer. If no following sentence passes, the next-best
+    sentences fill the answer as above.
+
+    With `mask` (D33), the scorer reads long hex digests as a placeholder; the
+    answer keeps the sentences as written.
+    """
+    candidates = [(e["rank"], s, e) for e in evidence for s in sentences(e["text"])]
     if not candidates:
         return INSUFFICIENT, []
-    q = np.asarray(embeddings.embed_query(question), dtype=float)
-    vectors = np.asarray(embeddings.embed_documents([s for _, s in candidates]), dtype=float)
-    q /= np.linalg.norm(q) or 1.0
-    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True).clip(min=1e-12)
-    order = np.argsort(-(vectors @ q), kind="stable")
+    if scorer is not None:
+        scores = np.asarray(scorer(question, [f"{e['source']} - {e['section']}\n{mask_digests(s) if mask else s}"
+                                              for _, s, e in candidates]), dtype=float)
+        best = int(np.argmax(scores))
+        context = [i for i in range(best, len(candidates)) if candidates[i][2] is candidates[best][2]
+                   and (i == best or not relevant_continuation or scores[i] > 0)]
+        order = context + [int(i) for i in np.argsort(-scores, kind="stable") if int(i) not in context]
+    else:
+        q = np.asarray(embeddings.embed_query(question), dtype=float)
+        vectors = np.asarray(embeddings.embed_documents([s for _, s, _ in candidates]), dtype=float)
+        q /= np.linalg.norm(q) or 1.0
+        vectors /= np.linalg.norm(vectors, axis=1, keepdims=True).clip(min=1e-12)
+        order = np.argsort(-(vectors @ q), kind="stable")
     chosen, seen = [], set()
     for i in order:
-        rank, sentence = candidates[i]
+        rank, sentence, _ = candidates[i]
         if sentence not in seen:
             chosen.append((rank, sentence))
             seen.add(sentence)
@@ -153,7 +184,8 @@ def answer(question: str, store, embeddings, top_k: int, min_relevance: float, m
     With a `scope` (D17), dense retrieval is restricted to chunks in that scope.
     With a `retriever` (D16), evidence is its top-k ranking and the question is
     answered only if the best dense cosine over all chunks reaches
-    `min_relevance`. Otherwise dense retrieval is used. In both dense cases,
+    `min_relevance`; if it has a `sentence_scorer` (D32), that scorer picks the
+    extractive sentences. Otherwise dense retrieval is used. In both dense cases,
     passages below the threshold are dropped. A generated answer is used only if it passes
     `check_grounding`; otherwise the extractive answer is returned with a warning.
     If the model says the evidence is insufficient, or gives a non-answer, the
@@ -175,7 +207,9 @@ def answer(question: str, store, embeddings, top_k: int, min_relevance: float, m
               "min_relevance": min_relevance, "evidence": evidence, "warnings": [], "generation": None}
     if not usable:
         return {**result, "status": "insufficient_evidence", "method": "none", "answer": INSUFFICIENT, "citations": []}
-    text, cited = extractive_answer(question, usable, embeddings, max_sentences)
+    text, cited = extractive_answer(question, usable, embeddings, max_sentences,
+                                    getattr(retriever, "sentence_scorer", None) if scope is None else None,
+                                    getattr(retriever, "relevant_continuation", False), getattr(retriever, "mask", False))
     method = "extractive"
     if generator is not None:
         try:

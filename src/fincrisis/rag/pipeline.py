@@ -113,6 +113,9 @@ def open_store(settings: dict, root: Path = PROJECT_ROOT, embeddings=None, allow
     if manifest.get("embed_section_headings", False) != wanted:
         raise idx.RAGIndexError(f"index was built with embed_section_headings={manifest.get('embed_section_headings', False)}, "
                                 f"config says {wanted}; rebuild with scripts/build_rag_index.py --force")
+    if manifest.get("mask_digests", False) != settings["retrieval"].get("mask_digests", False):
+        raise idx.RAGIndexError(f"index was built with mask_digests={manifest.get('mask_digests', False)}, config says "
+                                f"{settings['retrieval'].get('mask_digests', False)}; rebuild with scripts/build_rag_index.py --force")
     if not chunking_matches(manifest, settings):
         raise idx.RAGIndexError(f"index was built with chunking {manifest.get('chunking', {'method': 'characters'})}, "
                                 f"config says {chunking(settings)}; rebuild with scripts/build_rag_index.py --force")
@@ -131,8 +134,16 @@ def make_retriever(store, settings: dict, mode: str | None = None):
     mode = mode or r["mode"]
     if mode != "rerank":
         return Retriever(store, mode, r["rrf_k"])
-    return Retriever(store, mode, r["rrf_k"], reranker=make_reranker(r["rerank_model"]),
-                     candidates=r["rerank_candidates"])
+    reranker = make_reranker(r["rerank_model"])
+    retriever = Retriever(store, mode, r["rrf_k"], reranker=reranker, candidates=r["rerank_candidates"],
+                          mask=r.get("mask_digests", False))
+    if settings.get("sentence_selection", "embedding") == "reranker":  # D32: the same model picks the sentences
+        retriever.sentence_scorer = reranker
+        continuation = settings.get("sentence_continuation", "all")
+        if continuation not in ("all", "relevant"):
+            raise ValueError(f"sentence_continuation must be 'all' or 'relevant', not {continuation!r}")
+        retriever.relevant_continuation = continuation == "relevant"
+    return retriever
 
 
 def versions() -> dict:

@@ -51,7 +51,7 @@ of the RAG. The layers that decide what an answer says are plain Python in
 | Embeddings (all-MiniLM-L6-v2; revision recorded in the index manifest) | LangChain (`langchain_huggingface.HuggingFaceEmbeddings`) | `pipeline.py` |
 | Vector store | LangChain `VectorStore` interface, so `as_retriever()` works; custom FAISS implementation inside | `index.py` (`FaissStore`) |
 | Dense, hybrid and section-scoped retrieval | Custom Python | `retrieval.py`, `answer.py` |
-| Reranking the dense candidates (D31) | `sentence_transformers.CrossEncoder` (ms-marco-MiniLM-L-6-v2) | `retrieval.py`, `pipeline.py` |
+| Reranking the dense candidates (D31) and choosing extractive sentences (D32) | `sentence_transformers.CrossEncoder` (ms-marco-MiniLM-L-6-v2) | `retrieval.py`, `pipeline.py`, `answer.py` |
 | Extractive answers, `[n]` citations, abstention | Custom Python | `answer.py` |
 | Ollama generation and grounding check | Custom Python (fixed prompt over the local HTTP API) | `answer.py` |
 | Retrieval and generation evaluation | Custom Python | `evaluation.py`, `scripts/evaluate_rag*.py` |

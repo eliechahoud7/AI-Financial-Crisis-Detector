@@ -28,11 +28,12 @@ def build(settings: dict, root: Path, embeddings, force: bool) -> dict:
     loaded = docs.load_documents(paths, root)
     chunks, chunking = pipeline.split(settings, loaded, embeddings)
     include_section = settings["retrieval"]["embed_section_headings"]
-    store = idx.FaissStore.from_documents(chunks, embeddings, include_section=include_section)
+    mask = settings["retrieval"].get("mask_digests", False)
+    store = idx.FaissStore.from_documents(chunks, embeddings, include_section=include_section, mask=mask)
     manifest = {
         "built_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "embedding_model": settings["embedding_model"],
-        "embed_section_headings": include_section,
+        "embed_section_headings": include_section, "mask_digests": mask,
         "embedding_model_revision": pipeline.model_revision(settings["embedding_model"]),
         "dimension": int(store.index.d), "chunks": len(chunks),
         "chunking": chunking, "chunk_size": settings["chunk_size"], "chunk_overlap": settings["chunk_overlap"],

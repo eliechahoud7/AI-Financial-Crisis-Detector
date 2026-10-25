@@ -1,0 +1,160 @@
+{
+  "recorded_at_utc": "2026-10-25T00:10:03+00:00",
+  "git_commit": "8235060",
+  "index_built_at_utc": "2026-10-25T00:08:55+00:00",
+  "index_chunks": 251,
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "eval_set": "knowledge_base/eval/retrieval_questions.json",
+  "answers": {
+    "answer": {
+      "Which VIX value is used for date t?": {
+        "status": "answered",
+        "method": "extractive",
+        "answer": "Rule: for every S&P 500 trading date *t*, the VIX feature value is the VIX close from the immediately preceding date in the S&P 500 trading calendar, not the previous row of the VIX dataset. [1] Then shift by one S&P 500 session: the value for date *t* is the aligned VIX close on the S&P 500 trading date immediately before *t*. [1] VIX-only dates ignored (S&P 500 closed): ['2026-05-25', '2026-09-07'] [3]",
+        "citations": [
+          {
+            "marker": 1,
+            "source": "docs/decisions.md",
+            "section": "Design Decisions > D11. VIX alignment rule: previous S&P 500 trading day (Milestone 5, Phase B)",
+            "chunk_id": "docs/decisions.md#23"
+          },
+          {
+            "marker": 3,
+            "source": "data/reports/market_stress/dataset_report.md",
+            "section": "Market-Stress Dataset Report > VIX alignment (D11)",
+            "chunk_id": "data/reports/market_stress/dataset_report.md#8"
+          }
+        ],
+        "top_score": 0.610421
+      },
+      "How many trading days ahead does the market-stress label look?": {
+        "status": "answered",
+        "method": "extractive",
+        "answer": "Trading days are rows in the index price history. [3] market-stress confusion matrices at 0.5 and calibration for the rule models: their scores are not probabilities, and none were recorded; [4] Positive labels on consecutive days are highly correlated, because their windows overlap. [3]",
+        "citations": [
+          {
+            "marker": 3,
+            "source": "docs/decisions.md",
+            "section": "Design Decisions > D2. Market-stress target definition",
+            "chunk_id": "docs/decisions.md#5"
+          },
+          {
+            "marker": 4,
+            "source": "docs/decisions.md",
+            "section": "Design Decisions > D20. Dashboard charts (Phase G)",
+            "chunk_id": "docs/decisions.md#72"
+          }
+        ],
+        "top_score": 0.640712
+      },
+      "Who won the 2018 FIFA World Cup?": {
+        "status": "insufficient_evidence",
+        "method": "none",
+        "answer": "The indexed documents do not contain enough evidence to answer this question.",
+        "citations": [],
+        "top_score": 0.166094
+      }
+    },
+    "workflow": {
+      "What is the current market stress level?": {
+        "route": "market",
+        "trace": [
+          "route_request",
+          "assess_market",
+          "retrieve_context",
+          "compose_answer"
+        ],
+        "answer": "Market-stress signal as of 2026-10-23 (label: the S&P 500 closes at least 5% below its running high within the next 20 sessions (D2)).\n- Primary model `rule_downside_vol_20` (chosen on validation only): score 0.0806 vs frozen threshold 0.0896 -> not elevated.\n- The score is at the 46% percentile of 8999 historical trading days.\n- Secondary `xgboost`: score 0.144 vs threshold 0.065 -> elevated (uncalibrated; not a probability).\n- Measured reliability on the held-out test (2015-01-02 to 2026-09-25): average precision 0.363 vs a base rate of 0.212; at the threshold, precision 0.33 and recall 0.68. The signal is weak and produces many false alarms.\n\nFrom the project documents:\nIn words: `y_t = 1` if, during the next 20 trading days, the index closes at least 5% below its highest close since day *t* (including day *t* itself). [1] Primary model: the non-dummy model with the highest pooled walk-forward average precision. [2] Results describe 1990-2026 history and need not hold in the future. [3]\n\nResearch output only; not a forecast or financial advice. Results describe 1990-2026 history and carry the limitations documented in docs/decisions.md and docs/model_card.md.",
+        "citations": [
+          {
+            "marker": 1,
+            "source": "docs/decisions.md",
+            "section": "Design Decisions > D2. Market-stress target definition"
+          },
+          {
+            "marker": 2,
+            "source": "docs/decisions.md",
+            "section": "Design Decisions > D13. Market-stress models and evaluation rules (Milestone 5, Phase C)"
+          },
+          {
+            "marker": 3,
+            "source": "data/reports/market_stress/models/final_report.md",
+            "section": "Market-Stress Models: Held-out test (2015-01-02 .. 2026-09-25) > Limitations"
+          }
+        ],
+        "warnings": []
+      },
+      "How well do the bankruptcy models perform?": {
+        "route": "distress",
+        "trace": [
+          "route_request",
+          "summarize_distress",
+          "retrieve_context",
+          "compose_answer"
+        ],
+        "answer": "Company-distress baselines, frozen held-out test (1364 rows, 44 with label 1):\n- dummy (`dummy`): average precision 0.032 [0.032, 0.032], ROC-AUC 0.500.\n- logistic_regression (`lr_quantile`): average precision 0.472 [0.354, 0.616], ROC-AUC 0.940.\n- xgboost (`xgb_large_as_missing`): average precision 0.487 [0.364, 0.637], ROC-AUC 0.958.\n- Label 1 is the minority class and is treated as the class to detect. The meanings of labels 0 and 1 are not documented by UCI and remain unverified; no result here should be read as predicting bankruptcy.\n\nFrom the project documents:\nThe test set does not distinguish Logistic Regression from XGBoost: the interval for their difference includes zero. [1] Probabilities are not calibrated. [2] Applying the models elsewhere could systematically misjudge companies. [3]\n\nResearch output only; not a forecast or financial advice. Results describe 1990-2026 history and carry the limitations documented in docs/decisions.md and docs/model_card.md.",
+        "citations": [
+          {
+            "marker": 1,
+            "source": "docs/model_card.md",
+            "section": "Model Card: Company Distress Baselines (Milestone 4) > 7. Held-out test results"
+          },
+          {
+            "marker": 2,
+            "source": "docs/model_card.md",
+            "section": "Model Card: Company Distress Baselines (Milestone 4) > 9. Uncertainty"
+          },
+          {
+            "marker": 3,
+            "source": "docs/model_card.md",
+            "section": "Model Card: Company Distress Baselines (Milestone 4) > 11. Limitations, ethical considerations, and out-of-scope uses"
+          }
+        ],
+        "warnings": []
+      },
+      "Which VIX value is used for date t?": {
+        "route": "documents",
+        "trace": [
+          "route_request",
+          "retrieve_context",
+          "compose_answer"
+        ],
+        "answer": "Rule: for every S&P 500 trading date *t*, the VIX feature value is the VIX close from the immediately preceding date in the S&P 500 trading calendar, not the previous row of the VIX dataset. [1] Then shift by one S&P 500 session: the value for date *t* is the aligned VIX close on the S&P 500 trading date immediately before *t*. [1] VIX-only dates ignored (S&P 500 closed): ['2026-05-25', '2026-09-07'] [3]\n\nResearch output only; not a forecast or financial advice. Results describe 1990-2026 history and carry the limitations documented in docs/decisions.md and docs/model_card.md.",
+        "citations": [
+          {
+            "marker": 1,
+            "source": "docs/decisions.md",
+            "section": "Design Decisions > D11. VIX alignment rule: previous S&P 500 trading day (Milestone 5, Phase B)"
+          },
+          {
+            "marker": 3,
+            "source": "data/reports/market_stress/dataset_report.md",
+            "section": "Market-Stress Dataset Report > VIX alignment (D11)"
+          }
+        ],
+        "warnings": []
+      },
+      "Should I sell my stocks now?": {
+        "route": "advice",
+        "trace": [
+          "route_request",
+          "refuse_advice"
+        ],
+        "answer": "I can't give investment or trading advice. I can report the project's market-stress signal, the company-distress model results, or what the project documents say.",
+        "citations": [],
+        "warnings": []
+      },
+      "Who won the 2018 FIFA World Cup?": {
+        "route": "documents",
+        "trace": [
+          "route_request",
+          "retrieve_context",
+          "abstain"
+        ],
+        "answer": "The indexed documents do not contain enough evidence to answer this question.",
+        "citations": [],
+        "warnings": []
+      }
+    }
+  }
+}

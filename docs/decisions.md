@@ -973,3 +973,44 @@ if the decision changes.
   development-set reports, keeping an existing report, an invalid question
   set, Ollama unavailable, and the refusals, which happen before the index or
   Ollama is touched. The project's reports are not written.
+
+---
+
+## D25. RAG regression checks and reference answers (Phase H, step 4)
+
+- **Date:** 2026-10-25
+- **Problem:** documents change at every step, and every edit changes the
+  index. Nothing detected a retrieval regression or a changed answer; the
+  before/after comparisons so far were manual.
+- **Finding:** development-set retrieval has drifted slightly since D16 as the
+  index grew from 201 to 247 passages with the Phase F-H documents. For the
+  configured dense retriever, hit@3 went from 0.538 to 0.500, hit@5 from
+  0.615 to 0.577 and MRR from 0.362 to 0.344 (each one question out of 26;
+  q01 and q12 left the top five, q19 entered it, q08 and q22 fell one place).
+  Abstention is unchanged. The first run of this check then caught the
+  next step: adding this record moved q19 ("Which local language model is
+  planned...") from fifth to sixth place, behind a D24 passage in a near-tie
+  (cosine 0.293 against 0.291), so hit@5 fell to 0.538 and MRR to 0.337.
+  That is corpus growth, not a setting change; it was reviewed and accepted.
+  Nothing was tuned in response.
+- **Decision:** `src/fincrisis/qa/rag_regression.py`, run by
+  `scripts/check_rag_regression.py` (exit code 1 on a regression), compares
+  the current index and code with two baselines in `config/qa/`:
+  - `rag_dev_baseline.json`: development-set retrieval (summary metrics and
+    each question's first relevant rank) for all three retrievers. For the
+    configured one, no metric may fall below the baseline; the others are
+    reported only. The file also keeps the D16 numbers for comparison.
+  - `reference_answers.json`: the extractive answers of `ask_rag.py` for
+    three questions and of `run_crisis_agent.py` for five, compared exactly
+    (answer, citations, route). The stale-snapshot warning, which depends on
+    today's date, is left out.
+- **Development set only:** the question file is resolved through the
+  validation guard (D24). Every fixed question is taken from the development
+  set or the README, which a test checks, so none can be a validation
+  question.
+- **Accepting a change:** after a legitimate change (a new document or
+  decision record), review what the check reports, then re-record with
+  `--update`. The baselines record results; they do not choose settings.
+- **Tests:** `tests/test_rag_regression.py` (comparison logic, the
+  development-set rule, the update path, a stale index, and the check on the
+  real index when it is current).

@@ -69,10 +69,11 @@ The documents must be indexed first (`scripts\build_rag_index.py`, see the RAG s
 The market answer reads the local snapshot, so refresh it for a current signal; the answer warns
 when the snapshot is more than 7 days old.
 
-Requests for investment or trading advice are declined. Market and distress answers come from the
-frozen evaluated models and are explained with cited project documents; every answer states that
-it is research output, not a forecast or financial advice. Add `--json` to see the route taken and
-`--llm ollama` to let the local model write document answers.
+Requests for investment or trading advice (such as "Should I sell my stocks now?") are declined.
+Market and distress answers come from the frozen evaluated models and are explained with cited
+project documents; every answer states that it is research output, not a forecast or financial
+advice. Add `--json` to see the route taken and `--llm ollama` to let the local model write
+document answers.
 
 ## Setup
 

@@ -100,9 +100,17 @@ class TestPagesOnFrozenOutputs(AppCase):
                 notices = texts(at, "info") + texts(at, "warning")
                 self.assertEqual(any("frozen snapshot as of" in n for n in notices), name != "market_dashboard",
                                  notices)
-                self.assertTrue(any(disclosures.RESEARCH_ONLY in c for c in texts(at, "caption")))
-                self.assertIn("Limitations", texts(at, "subheader"))
+                shown = name != "market_dashboard"
+                self.assertEqual(any(disclosures.RESEARCH_ONLY in c for c in texts(at, "caption")), shown)
+                self.assertEqual("Limitations" in texts(at, "subheader"), shown)
         self.assertEqual({k: tree_hashes(PROJECT_ROOT / d) for k, d in DIRS.items()}, before)
+
+    def test_market_dashboard_explains_each_indicator_in_red(self):
+        at = run_page("market_dashboard")
+        explanations = [c for c in texts(at, "caption") if "color: #a94442" in c]
+        self.assertEqual(len(at.metric), 4)
+        self.assertEqual(len(explanations), 4, texts(at, "caption"))
+        self.assertIn("means it fell by 0.52% from the day before", explanations[0])
 
     def test_only_the_market_dashboard_drops_the_header_research_notice(self):
         header = f":material/info: {disclosures.RESEARCH_ONLY}"

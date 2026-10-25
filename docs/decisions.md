@@ -1641,9 +1641,10 @@ if the decision changes.
   that, for example while the evaluation code was developed in `06f4ed7`.
   This is unverified, not disproved.
 - **Open methodological questions** (recorded, not resolved):
-  - **Threshold transfer.** Each model's threshold is the max-F1 threshold
-    on the pooled out-of-fold predictions of 15 fold models. It is applied
-    unchanged to a different model, refitted on all development rows.
+  - **Threshold transfer** (decided 2026-10-26 in D35). Each model's
+    threshold is the max-F1 threshold on the pooled out-of-fold predictions
+    of 15 fold models. It is applied unchanged to a different model,
+    refitted on all development rows.
     - **Rules:** the score is the raw feature, so the threshold transfers.
     - **Logistic regression and XGBoost:** fold score scales differ widely.
       The median out-of-fold score ranges over folds from 0.014 to 0.675
@@ -1709,9 +1710,59 @@ if the decision changes.
 - **Decisions still required** (not made here):
   - whether to formally approve Phase B and the D13 protocol on this
     evidence;
-  - how thresholds of fitted models should be set for a final model;
+  - how thresholds of fitted models should be set for a final model
+    (decided 2026-10-26 in D35);
   - which aggregation is the primary selection metric for any future
     comparison;
   - whether to address overlapping labels in training;
   - how to record reviews between stages for any rerun;
   - whether and how to set up a forward evaluation.
+
+---
+
+## D35. Decision thresholds are valid for the rule baselines only
+
+- **Date:** 2026-10-26. **Status:** decided by the project owner. It resolves
+  the threshold-transfer question of D34 and none of the others.
+- **Decision:**
+  - **Rule baselines** (`rule_downside_vol_20`, the primary model, and
+    `rule_vix_pct_252`): their frozen max-F1 thresholds (0.0896 and 0.2937)
+    stay valid. A rule's score is the raw feature value, so the threshold
+    means the same for the fold models and the final model.
+  - **Fitted models** (`logistic_regression`, `xgboost`): their frozen
+    thresholds (0.17 and 0.0652) are **not transferable**. They were chosen
+    on the pooled out-of-fold scores of 15 fold models, whose score scales
+    differ widely (D34), and applied unchanged to a model refitted on all
+    development rows, whose scale was not checked.
+    - **Judged on:** ranking metrics (average precision, ROC-AUC), plus the
+      Brier score and log-loss as measures of probability quality.
+    - **Not used as evidence:** their threshold metrics (precision, recall,
+      F1 and confusion matrices at those thresholds).
+  - **Historical results:** the threshold metrics of the fitted models in
+    `data/reports/market_stress/models/` (`cv_report.md`, `final_report.md`,
+    `test_metrics.json`) stay as historical results, read with this caveat.
+    Nothing is recomputed.
+  - **Future training:** any decision threshold for a fitted model needs its
+    own decision, with the procedure fixed before training. A pooled
+    out-of-fold threshold from fold models must not be applied to a refitted
+    model. D35 does not approve or schedule any training.
+- **Not changed:**
+  - no code, data, model, threshold value or result;
+  - `selection.json` is unchanged;
+  - nothing was retrained or re-evaluated;
+  - the integrity and reproducibility checks are unaffected.
+- **Known inconsistency, until a separately approved change:**
+  - the workflow's market answer still reports the secondary XGBoost model
+    as elevated or not at its frozen threshold (`src/fincrisis/agents/tools.py`,
+    `graph.py`);
+  - the dashboard's Market Stress page still shows that comparison
+    (`app/views/market_stress.py`).
+
+  Under this decision, that signal is not supported. The proposed change is
+  to show the XGBoost score and its historical percentile instead.
+- **Still open from D34:**
+  - the primary aggregation metric;
+  - overlapping labels in training;
+  - formal approval of Phase B and the D13 protocol;
+  - how reviews between stages are recorded;
+  - forward evaluation.

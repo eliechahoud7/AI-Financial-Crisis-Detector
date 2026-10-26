@@ -6,8 +6,8 @@ import ui
 from fincrisis.agents.graph import DISCLAIMER, REFUSAL, answer_method
 
 ui.page_header("AI Research Workflow",
-               "A LangGraph workflow routes each question: the current market-stress signal, the company-distress "
-               "results, or the project documents. Requests for investment or trading advice are declined.")
+               "Ask a question about market stress, company financial distress, or project documentation. The system "
+               "finds the most relevant information to answer you.")
 
 status = ui.index_status()
 if not status["ready"]:
@@ -24,7 +24,7 @@ st.pills("Examples", EXAMPLES, key="wf_example",
          on_change=lambda: st.session_state.update(wf_text=st.session_state.get("wf_example") or ""))
 with st.form("wf_question"):
     question = st.text_input("Question", key="wf_text")
-    asked = st.form_submit_button("Run workflow", type="primary")
+    asked = st.form_submit_button("Ask", type="primary")
 
 if asked and question.strip():
     graph, notes = ui.workflow(use_llm, ui.index_fingerprint(), str(ui.DATA_ROOT))

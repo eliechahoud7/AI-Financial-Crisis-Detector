@@ -226,7 +226,7 @@ class TestDashboardWithOllama(unittest.TestCase):
         at = AppTest.from_file(str(PROJECT_ROOT / "app" / "views" / f"{page}.py"), default_timeout=180).run()
         at.toggle(key=toggle_key).set_value(True).run()
         at.text_input(key=text_key).input(question)
-        return next(b for b in at.button if b.label in ("Ask", "Run workflow")).click().run()
+        return next(b for b in at.button if b.label == "Ask").click().run()
 
     def test_rag_page_reports_an_unavailable_model(self):
         with unittest.mock.patch.object(ans, "ollama_status", return_value={"available": False, "reason": "no server"}):

@@ -21,11 +21,13 @@ if use_llm:
     st.caption(f"{rag['ollama']['model']} is under the Qwen Research License: non-commercial use only. "
                "Generation can take a minute or more on a CPU.")
 
+EXAMPLES = ["How is the market-stress target defined?", "Are the distress probabilities calibrated?",
+            "Why is VIX lagged by one session?"]
+st.pills("Examples", EXAMPLES, key="rag_example",  # fills the question field; Ask still submits it
+         on_change=lambda: st.session_state.update(rag_text=st.session_state.get("rag_example") or ""))
 with st.form("rag_question"):
     question = st.text_input("Question", placeholder="Which VIX value is used for date t?", key="rag_text")
     asked = st.form_submit_button("Ask", disabled=not status["ready"], type="primary")
-st.caption("Examples: How is the market-stress target defined? · Are the distress probabilities calibrated? · "
-           "Why is VIX lagged by one session?")
 
 if asked and question.strip():
     try:

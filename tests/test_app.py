@@ -201,7 +201,7 @@ class TestInteractions(AppCase):
     def ask(self, page: str, key: str, question: str) -> AppTest:
         at = run_page(page)
         at.text_input(key=key).input(question)
-        return next(b for b in at.button if b.label in ("Ask", "Run workflow")).click().run()
+        return next(b for b in at.button if b.label == "Ask").click().run()
 
     def test_rag_page_gives_the_same_answer_as_the_pipeline(self):
         question = "Which VIX value is used for date t?"
@@ -246,6 +246,13 @@ class TestInteractions(AppCase):
         self.assertNotIn("Best passage", shown_text(at))
         self.assertIn("Method: none", texts(at, "caption"))
 
+    def test_workflow_page_intro_and_ask_button(self):
+        at = run_page("research_workflow")
+        self.assertIn("Ask a question about market stress, company financial distress, or project documentation. "
+                      "The system finds the most relevant information to answer you.", texts(at, "markdown"))
+        self.assertEqual([b.label for b in at.button], ["Ask"])
+        self.assertNotIn("A LangGraph workflow routes", shown_text(at))
+
     def test_workflow_refuses_advice_and_keeps_the_route_internal(self):
         at = self.ask("research_workflow", "wf_text", "Should I sell my stocks now?")
         self.assertIn(REFUSAL, texts(at, "info"))
@@ -278,6 +285,45 @@ class TestInteractions(AppCase):
         for interval in intervals:
             self.assertIn(interval, shown)
         self.assert_no_sources_shown(at, state["citations"])
+
+
+@unittest.skipUnless(PRESENT and INDEX_READY, "frozen outputs, RAG index or embedding model not present")
+class TestExampleQuestions(AppCase):
+    """Example pills fill the question field with the exact question and never submit it."""
+
+    PAGES = (("rag_assistant", "rag_example", "rag_text", "rag_result", "Ask"),
+             ("research_workflow", "wf_example", "wf_text", "wf_state", "Ask"))
+
+    def test_a_pill_fills_the_input_without_submitting(self):
+        for page, pill_key, text_key, result_key, _ in self.PAGES:
+            at = run_page(page)
+            pills = at.button_group(key=pill_key)
+            self.assertTrue(pills.options)
+            for example in pills.options:
+                with self.subTest(page=page, example=example):
+                    at.button_group(key=pill_key).set_value(example).run()
+                    self.assertFalse(at.exception)
+                    self.assertEqual(at.text_input(key=text_key).value, example)  # the field itself, not only state
+                    self.assertNotIn(result_key, at.session_state)  # nothing was asked
+                    self.assertNotIn("Answer", texts(at, "subheader"))
+
+    def test_the_filled_question_is_asked_with_the_button(self):
+        for page, pill_key, text_key, result_key, button in self.PAGES:
+            with self.subTest(page=page):
+                at = run_page(page)
+                example = at.button_group(key=pill_key).options[0]
+                at.button_group(key=pill_key).set_value(example).run()
+                next(b for b in at.button if b.label == button).click().run()
+                self.assertFalse(at.exception)
+                self.assertEqual(at.session_state[result_key]["question"], example)
+                self.assertIn("Answer", texts(at, "subheader"))
+
+    def test_rag_page_offers_its_former_example_captions_as_pills(self):
+        at = run_page("rag_assistant")
+        self.assertEqual(at.button_group(key="rag_example").options,
+                         ["How is the market-stress target defined?", "Are the distress probabilities calibrated?",
+                          "Why is VIX lagged by one session?"])
+        self.assertFalse(any(c.startswith("Examples:") for c in texts(at, "caption")))  # no longer a plain caption
 
 
 class TestHideCitations(unittest.TestCase):

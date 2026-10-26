@@ -174,10 +174,10 @@ def market_text(m: dict) -> str:
     if "historical_percentile" in p:
         lines.append(f"- The score is at the {p['historical_percentile']:.0%} percentile of {p['history_rows']} "
                      "historical trading days.")
-    if m.get("secondary"):
+    if m.get("secondary"):  # D35: a fitted model's frozen threshold is not transferable, so no verdict is given
         s = m["secondary"]
-        lines.append(f"- Secondary `{s['name']}`: score {s['score']:.3f} vs threshold {s['threshold']:.3f} -> "
-                     f"{'elevated' if s['elevated'] else 'not elevated'} (uncalibrated; not a probability).")
+        lines.append(f"- Secondary `{s['name']}`: score {s['score']:.3f} (uncalibrated; not a probability; for "
+                     "comparison only, with no decision threshold).")
     lines.append(f"- Measured reliability on the held-out test ({m['test_period']['first_date']} to "
                  f"{m['test_period']['last_date']}): average precision {p['test_average_precision']:.3f} vs a "
                  f"base rate of {m['test_prevalence']:.3f}; at the threshold, precision {p['test_precision_at_threshold']:.2f} "

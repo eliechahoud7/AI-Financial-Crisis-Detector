@@ -102,6 +102,17 @@ class TestRouting(unittest.TestCase):
 
 
 class TestGraphBranches(unittest.TestCase):
+    def test_secondary_fitted_model_gets_no_threshold_verdict(self):
+        """Regression (D35): the secondary model's frozen threshold is not transferable, so no signal is claimed."""
+        secondary = {"name": "xgboost", "kind": "fit", "score": 0.144, "threshold": 0.065, "elevated": True}
+        text = g.market_text({**MARKET, "secondary": secondary})
+        [line] = [l for l in text.splitlines() if "`xgboost`" in l]
+        self.assertIn("score 0.144", line)
+        self.assertNotRegex(line.lower(), r"threshold \d|\belevated\b")
+        self.assertIn("no decision threshold", line)
+        primary = next(l for l in text.splitlines() if "Primary model" in l)
+        self.assertIn("vs frozen threshold 0.0900 -> not elevated", primary)  # the rule's threshold stays valid
+
     def test_market_branch_scores_then_grounds_with_documents(self):
         r = Recorder()
         state = run(MARKET_Q, r)

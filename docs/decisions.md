@@ -1759,12 +1759,18 @@ if the decision changes.
     scoring the model across history, including the test period, so none
     is shown.
   - **Test:** `tests/test_app.py` checks the card.
-- **Known inconsistency, until a separately approved change:** the
-  workflow's market answer still reports the secondary XGBoost model as
-  elevated or not at its frozen threshold (`src/fincrisis/agents/tools.py`,
-  `graph.py`). The Research Workflow page shows that answer. Under this
-  decision, that signal is not supported. Changing it alters one workflow
-  reference answer (D25), which would need review and re-recording.
+- **Workflow (fixed 2026-10-26):** the market answer gives the XGBoost score
+  "for comparison only, with no decision threshold", with no threshold and
+  no elevated verdict (`src/fincrisis/agents/graph.py`, `market_text`). The
+  Research Workflow page and `scripts/run_crisis_agent.py` share that text.
+  - **Primary rule:** keeps its threshold and verdict.
+  - **Structured data unchanged:** the tool output (`agents/tools.py`) still
+    carries the frozen threshold and comparison, because the D23
+    reproducibility check verifies them. It also appears in the page's raw
+    "Full workflow state" view.
+  - **Baseline:** one workflow reference answer (D25) changed in that line
+    only. It was reviewed and re-recorded.
+  - **Test:** `tests/test_agent.py` checks the text.
 - **Still open from D34:**
   - the primary aggregation metric;
   - overlapping labels in training;

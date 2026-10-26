@@ -3,7 +3,7 @@
 import streamlit as st
 
 import ui
-from fincrisis.agents.graph import DISCLAIMER, REFUSAL
+from fincrisis.agents.graph import DISCLAIMER, REFUSAL, answer_method
 
 ui.page_header("AI Research Workflow",
                "A LangGraph workflow routes each question: the current market-stress signal, the company-distress "
@@ -30,8 +30,10 @@ if asked and question.strip():
     graph, notes = ui.workflow(use_llm, ui.index_fingerprint(), str(ui.DATA_ROOT))
     with st.spinner("Running the workflow..."):
         state = graph.invoke({"question": question.strip()})
-    state["warnings"] = [*state.get("warnings", []), *notes]  # as scripts/run_crisis_agent.py does
+    if state.get("route") == "documents":  # the model notes concern document questions only
+        state["warnings"] = [*state.get("warnings", []), *notes]  # as scripts/run_crisis_agent.py does
     state["answer"] = state["answer"].removesuffix(f"\n\n{DISCLAIMER}")  # the page shows no disclaimer
+    state["method"] = answer_method(state, use_llm)  # recorded with the run, so a later toggle does not relabel it
     st.session_state["wf_state"] = state
 
 state = st.session_state.get("wf_state")
@@ -47,6 +49,8 @@ if state is not None:
     else:
         st.markdown(state["answer"])
     ui.show_citations(state.get("citations", []))
+    if state.get("method"):
+        st.caption(f"Method: {state['method']['text']}")
     st.caption("Route: " + " → ".join(state.get("trace", [])))
     for warning in state.get("warnings", []):
         st.warning(warning, icon=":material/warning:")

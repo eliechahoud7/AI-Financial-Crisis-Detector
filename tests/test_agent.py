@@ -191,6 +191,52 @@ class TestGraphBranches(unittest.TestCase):
         self.assertEqual(r.calls, [])
 
 
+class TestAnswerMethod(unittest.TestCase):
+    """`answer_method` labels the run from the RAG result's metadata, never from the answer text."""
+
+    DOC = "Where is the market-stress target defined?"
+    GENERATION = {"model": "m", "seconds": 1.5, "raw_answer": "x", "grounding_problems": [], "citation_repairs": []}
+
+    def method(self, question, rag, use_llm=True):
+        return g.answer_method(run(question, Recorder(rag=rag)), use_llm)
+
+    def test_document_answers(self):
+        generated = {**ANSWERED, "method": "generative", "generation": self.GENERATION}
+        self.assertEqual(self.method(self.DOC, generated)["kind"], "generated")
+        repaired = {**generated, "generation": {**self.GENERATION, "citation_repairs": ["re-cited"]}}
+        self.assertIn("1 citation marker(s) repaired", self.method(self.DOC, repaired)["text"])
+        rejected = {**ANSWERED, "method": "extractive",
+                    "generation": {**self.GENERATION, "grounding_problems": ["no citations"]}}
+        self.assertEqual(self.method(self.DOC, rejected),
+                         {"kind": "rejected", "text": "extractive fallback: m's answer was rejected by the grounding "
+                                                      "check (no citations)"})
+        plain = {**ANSWERED, "method": "extractive", "generation": None}
+        self.assertEqual(self.method(self.DOC, plain, use_llm=False)["text"], "extractive (local model off)")
+        self.assertIn("could not be used", self.method(self.DOC, plain)["text"])  # unavailable or failed
+        self.assertEqual(self.method(self.DOC, plain)["kind"], "extractive")
+
+    def test_document_abstentions(self):
+        by_model = {"status": "insufficient_evidence", "method": "generative", "answer": "none", "citations": [],
+                    "warnings": [], "generation": self.GENERATION}
+        self.assertEqual(self.method(self.DOC, by_model)["text"], "abstained: m found the evidence insufficient")
+        by_threshold = {**by_model, "method": "none", "generation": None, "top_score": 0.21, "min_relevance": 0.3}
+        method = self.method(self.DOC, by_threshold)
+        self.assertEqual((method["kind"], method["text"]),
+                         ("abstained", "abstained: no passage reached the relevance threshold (best 0.210, needs 0.30)"))
+
+    def test_market_and_distress_context_is_always_extractive(self):
+        for question in ("What is the current market stress level?", "How well do the bankruptcy models perform?"):
+            with self.subTest(question=question):
+                method = self.method(question, ANSWERED)
+                self.assertEqual(method["kind"], "extractive")
+                self.assertIn("document questions only", method["text"])
+
+    def test_refused_and_failed_runs_have_no_method(self):
+        self.assertIsNone(self.method("Should I sell my stocks now?", ANSWERED))
+        state = run(self.DOC, Recorder(rag_error=RuntimeError("index is stale")))
+        self.assertIsNone(g.answer_method(state, True))
+
+
 class TestContextAnswer(unittest.TestCase):
     ENTRIES = [{"question": "q1", "source": "a.md", "section": "S1"}, {"question": "q2", "source": "b.md", "section": "S2"},
                {"question": "q3", "source": "c.md", "section": "S3"}]

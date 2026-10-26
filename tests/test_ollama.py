@@ -171,6 +171,29 @@ class TestWorkflowWithOllama(unittest.TestCase):
         self.assertEqual(notes, ["local model unavailable (no server); extractive answers used"])
         self.assertEqual((first["method"], second["method"]), ("extractive", "extractive"))
 
+    def test_workflow_recovers_when_the_server_starts(self):
+        """Tools created while Ollama was down use it on the next document question once it answers."""
+        statuses = [{"available": False, "reason": "no server"}, {"available": True, "version": "t"}]
+        good = lambda *args, **kwargs: (lambda question, evidence: (GOOD["response"], {"model": "m"}))
+        with unittest.mock.patch.object(ans, "ollama_status", side_effect=statuses) as status, \
+                unittest.mock.patch.object(ans, "ollama_generator", good):
+            tools, notes = runtime.make_tools(self.settings, use_llm=True)
+            before = tools.rag_answer(QUESTION)
+            self.assertEqual(notes, ["local model unavailable (no server); extractive answers used"])
+            after, again = tools.rag_answer(QUESTION), tools.rag_answer(QUESTION)
+        self.assertEqual((before["method"], after["method"], again["method"]), ("extractive", "generative", "generative"))
+        self.assertEqual(notes, [])  # the note no longer applies
+        self.assertEqual(status.call_count, 2)  # once available, the server is not checked again
+
+    def test_market_and_distress_context_never_contacts_the_model(self):
+        """The toggle applies to document questions only (D17): context answers are extractive, unchecked."""
+        with unittest.mock.patch.object(ans, "ollama_status", side_effect=AssertionError("model checked")), \
+                unittest.mock.patch.object(ans, "ollama_generator", side_effect=AssertionError("model used")):
+            tools, notes = runtime.make_tools(self.settings, use_llm=True)
+            for branch in ("market", "distress"):
+                self.assertIsNone(tools.context_answer(branch).get("generation"))
+        self.assertEqual(notes, [])
+
     def test_generator_failure_reaches_the_workflow_warnings(self):
         def failing(*args, **kwargs):
             def generate(question, evidence):
@@ -225,6 +248,23 @@ class TestDashboardWithOllama(unittest.TestCase):
             at = self.ask("research_workflow", "wf_text", "wf_llm", "Which VIX value is used for date t?")
         self.assertFalse(at.exception)
         self.assertTrue(any("local model unavailable (no server)" in w.value for w in at.warning))
+        self.assertTrue(any("Method: extractive: the local model could not be used" in c.value for c in at.caption))
+
+    def test_workflow_page_shows_a_rejected_generation(self):
+        bad = lambda *args, **kwargs: (lambda question, evidence: ("An answer without citations.", {"model": "m"}))
+        with unittest.mock.patch.object(ans, "ollama_status", return_value={"available": True, "version": "t"}), \
+                unittest.mock.patch.object(ans, "ollama_generator", bad):
+            at = self.ask("research_workflow", "wf_text", "wf_llm", "Which VIX value is used for date t?")
+        self.assertFalse(at.exception)
+        self.assertTrue(any("Method: extractive fallback: m's answer was rejected by the grounding check (no citations)"
+                            in c.value for c in at.caption), [c.value for c in at.caption])
+
+    def test_workflow_page_shows_market_context_as_extractive_without_model_notes(self):
+        with unittest.mock.patch.object(ans, "ollama_status", return_value={"available": False, "reason": "no server"}):
+            at = self.ask("research_workflow", "wf_text", "wf_llm", "What is the current market stress level?")
+        self.assertFalse(at.exception)
+        self.assertTrue(any("Method: extractive document context" in c.value for c in at.caption))
+        self.assertFalse(any("local model unavailable" in w.value for w in at.warning))
 
 
 LIVE = os.environ.get("FINCRISIS_LIVE_OLLAMA") == "1"

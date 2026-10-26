@@ -1751,15 +1751,20 @@ if the decision changes.
   - `selection.json` is unchanged;
   - nothing was retrained or re-evaluated;
   - the integrity and reproducibility checks are unaffected.
-- **Known inconsistency, until a separately approved change:**
-  - the workflow's market answer still reports the secondary XGBoost model
-    as elevated or not at its frozen threshold (`src/fincrisis/agents/tools.py`,
-    `graph.py`);
-  - the dashboard's Market Stress page still shows that comparison
-    (`app/views/market_stress.py`).
-
-  Under this decision, that signal is not supported. The proposed change is
-  to show the XGBoost score and its historical percentile instead.
+- **Dashboard (fixed 2026-10-26):** the Market Stress page shows the
+  XGBoost score "for comparison only; no decision threshold", with no
+  threshold and no signal verdict (`app/views/market_stress.py`).
+  - **Primary rule:** still shown with its threshold.
+  - **No historical percentile:** a percentile for XGBoost would require
+    scoring the model across history, including the test period, so none
+    is shown.
+  - **Test:** `tests/test_app.py` checks the card.
+- **Known inconsistency, until a separately approved change:** the
+  workflow's market answer still reports the secondary XGBoost model as
+  elevated or not at its frozen threshold (`src/fincrisis/agents/tools.py`,
+  `graph.py`). The Research Workflow page shows that answer. Under this
+  decision, that signal is not supported. Changing it alters one workflow
+  reference answer (D25), which would need review and re-recording.
 - **Still open from D34:**
   - the primary aggregation metric;
   - overlapping labels in training;

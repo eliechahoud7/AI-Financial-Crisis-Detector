@@ -23,9 +23,9 @@ if signal is not None:
     if "historical_percentile" in p:
         cols[1].metric("Historical percentile", f"{p['historical_percentile']:.0%}",
                        f"of {p['history_rows']:,} trading days", delta_color="off")
-    if s:
+    if s:  # D35: a fitted model's frozen threshold is not transferable, so its score is shown without a verdict
         cols[2].metric(f"{charts.label(s['name'])} score (uncalibrated)", f"{s['score']:.3f}",
-                       f"threshold {s['threshold']:.3f}: {'signal' if s['elevated'] else 'no signal'}", delta_color="off")
+                       "for comparison only; no decision threshold", delta_color="off")
     st.markdown(f"The primary model currently {state} the level it uses to raise a stress signal. It is built to "
                 "give early warning of market stress, and in historical testing it flagged "
                 f"{p['test_recall_at_threshold']:.0%} of the trading days followed within about a month by a fall "

@@ -143,6 +143,15 @@ class TestPagesOnFrozenOutputs(AppCase):
                     config = json.loads(element.proto.config or "{}")
                     self.assertEqual(config, {"modeBarButtonsToRemove": hidden})  # nothing else is switched off
 
+    def test_xgboost_score_is_shown_without_a_threshold_verdict(self):
+        """Regression (D35): a fitted model's frozen threshold is not transferable, so no signal is claimed for it."""
+        metrics = {m.label: m for m in run_page("market_stress").metric}
+        [xgb] = [m for label, m in metrics.items() if label.startswith("XGBoost score")]
+        self.assertNotRegex(str(xgb.delta).lower(), r"threshold \d|\bsignal\b")
+        self.assertIn("no decision threshold", str(xgb.delta))
+        [primary] = [m for label, m in metrics.items() if label.startswith("Rule: 20-day downside volatility score")]
+        self.assertRegex(str(primary.delta), r"^threshold 0\.\d{4}$")  # the rule's threshold stays valid
+
     def test_distress_page_shows_the_label_caveat_and_no_scoring_form(self):
         at = run_page("company_distress")
         self.assertTrue(any("has not been independently verified" in w and "rather than confirmed bankruptcy" in w

@@ -1,6 +1,5 @@
 """Financial RAG Assistant: cited answers from the project documents (D14-D16)."""
 
-import pandas as pd
 import streamlit as st
 
 import ui
@@ -45,15 +44,10 @@ if asked and question.strip():
 result = st.session_state.get("rag_result")
 if result is not None:
     st.subheader("Answer")
-    st.caption(f"Question: {result['question']}")
-    if result["status"] == "answered":
-        st.markdown(result["answer"])
-        ui.show_citations(result["citations"])
+    if result["status"] == "answered":  # citations and evidence stay in the result; the page shows plain text
+        st.markdown(ui.hide_citations(result["answer"], result["citations"]))
     else:
         st.info(result["answer"], icon=":material/search_off:")
-        if result["top_score"] is not None:
-            st.caption(f"Best passage relevance {result['top_score']:.3f}; an answer needs at least "
-                       f"{result['min_relevance']:.2f}.")
     method = result["method"]
     if result.get("generation"):
         g = result["generation"]
@@ -61,9 +55,3 @@ if result is not None:
     st.caption(f"Method: {method}")
     for warning in result["warnings"]:
         st.warning(warning, icon=":material/warning:")
-    with st.expander("Retrieved passages"):
-        if result["evidence"]:
-            st.dataframe(pd.DataFrame(result["evidence"])[["rank", "score", "source", "section", "text"]],
-                         hide_index=True, width="stretch")
-        else:
-            st.write("No passages were retrieved.")

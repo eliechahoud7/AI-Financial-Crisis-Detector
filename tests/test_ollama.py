@@ -259,6 +259,47 @@ class TestDashboardWithOllama(unittest.TestCase):
         self.assertTrue(any("Method: extractive fallback: m's answer was rejected by the grounding check (no citations)"
                             in c.value for c in at.caption), [c.value for c in at.caption])
 
+    @staticmethod
+    def quoting(*args, **kwargs):
+        """A fake model that quotes the first evidence sentence with its citation marker (a grounded answer)."""
+        def generate(question, evidence):
+            sentence = ans.sentences(evidence[0]["text"])[0].rstrip(".")
+            return f"{sentence} [{evidence[0]['rank']}].", {"model": "m", "seconds": 0.1}
+        return generate
+
+    def test_generated_answers_are_validated_with_markers_and_shown_without(self):
+        """The grounding check runs on the cited answer; the pages show it without markers or sources."""
+        for page, text_key, toggle_key, result_key in (("rag_assistant", "rag_text", "rag_llm", "rag_result"),
+                                                       ("research_workflow", "wf_text", "wf_llm", "wf_state")):
+            with self.subTest(page=page), \
+                    unittest.mock.patch.object(ans, "ollama_status", return_value={"available": True, "version": "t"}), \
+                    unittest.mock.patch.object(ans, "ollama_generator", self.quoting):
+                st.cache_resource.clear()
+                at = self.ask(page, text_key, toggle_key, "Which VIX value is used for date t?")
+                self.assertFalse(at.exception)
+                state = at.session_state[result_key]
+                rag = state if page == "rag_assistant" else state["rag"]
+                self.assertEqual((rag["method"], rag["generation"]["grounding_problems"]), ("generative", []))
+                self.assertRegex(state["answer"], r"\[\d+\]")  # the validated answer keeps its markers
+                self.assertTrue(state["citations"])
+                shown = "\n".join(m.value for m in at.markdown)
+                self.assertIn(ui.hide_citations(state["answer"], state["citations"]), shown)
+                self.assertNotRegex(shown, r"\[\d+\]")
+                self.assertNotIn("Sources", shown)
+                self.assertFalse(any(c["source"] in shown for c in state["citations"]))
+
+    def test_unsupported_generated_answer_is_still_rejected(self):
+        unsupported = lambda *args, **kwargs: (lambda q, e: ("Quantum chromodynamics governs gluons strongly [1].",
+                                                             {"model": "m"}))
+        with unittest.mock.patch.object(ans, "ollama_status", return_value={"available": True, "version": "t"}), \
+                unittest.mock.patch.object(ans, "ollama_generator", unsupported):
+            at = self.ask("rag_assistant", "rag_text", "rag_llm", "Which VIX value is used for date t?")
+        result = at.session_state["rag_result"]
+        self.assertEqual(result["method"], "extractive")
+        self.assertIn("content words", result["generation"]["grounding_problems"][0])
+        self.assertTrue(any("generated answer rejected" in w.value for w in at.warning))
+        self.assertNotIn("Quantum", "\n".join(m.value for m in at.markdown))
+
     def test_workflow_page_shows_market_context_as_extractive_without_model_notes(self):
         with unittest.mock.patch.object(ans, "ollama_status", return_value={"available": False, "reason": "no server"}):
             at = self.ask("research_workflow", "wf_text", "wf_llm", "What is the current market stress level?")

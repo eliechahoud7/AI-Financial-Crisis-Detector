@@ -8,6 +8,7 @@ data folder.
 """
 
 import json
+import re
 import sys
 import tempfile
 import tomllib
@@ -211,19 +212,45 @@ class TestInteractions(AppCase):
         expected = ans.answer(question, store, embeddings, rag["top_k"], rag["min_relevance"],
                               rag["max_answer_sentences"], None, rag["ollama"]["min_support"],
                               pipeline.make_retriever(store, rag))
-        markdown = texts(at, "markdown")
-        self.assertIn(expected["answer"], markdown)
-        self.assertTrue(any(f"`{expected['citations'][0]['source']}`" in m for m in markdown))
+        self.assertTrue(expected["citations"])
+        self.assertIn(ui.hide_citations(expected["answer"], expected["citations"]), texts(at, "markdown"))
+        self.assertEqual(at.session_state["rag_result"]["citations"], expected["citations"])  # kept, not shown
+        self.assert_no_sources_shown(at, expected["citations"])
+        self.assertIn("Method: extractive", texts(at, "caption"))
         self.assertNotIn(disclosures.RESEARCH_ONLY, shown_text(at))
+
+    def assert_no_sources_shown(self, at: AppTest, citations: list):
+        shown = shown_text(at)
+        self.assertNotIn("Sources", shown)
+        self.assertNotIn("relevance", shown.lower().replace("relevance threshold", ""))
+        for c in citations:
+            self.assertNotIn(f"[{c['marker']}]", "\n".join(texts(at, "markdown")))
+            self.assertNotIn(c["source"], shown)
+        self.assertEqual(len(at.expander), 0)  # no "Retrieved passages" or "Full workflow state" view
+        self.assertEqual(len(at.dataframe), 0)
+        self.assertEqual(len(at.json), 0)
+        self.assert_no_route_or_question(at)
+
+    def assert_no_route_or_question(self, at: AppTest):
+        """The results area does not repeat the question or show the workflow route (kept in the state only)."""
+        shown = shown_text(at)
+        self.assertNotIn("Question:", shown)
+        self.assertNotIn("Route:", shown)
+        self.assertNotIn("route_request", shown)
+        self.assertIn("Answer", texts(at, "subheader"))
 
     def test_rag_page_abstains_without_evidence(self):
         at = self.ask("rag_assistant", "rag_text", "Who won the 2018 FIFA World Cup?")
         self.assertIn(ans.INSUFFICIENT, texts(at, "info"))
+        self.assert_no_sources_shown(at, [])
+        self.assertNotIn("Best passage", shown_text(at))
+        self.assertIn("Method: none", texts(at, "caption"))
 
-    def test_workflow_refuses_advice_and_reports_the_route(self):
+    def test_workflow_refuses_advice_and_keeps_the_route_internal(self):
         at = self.ask("research_workflow", "wf_text", "Should I sell my stocks now?")
         self.assertIn(REFUSAL, texts(at, "info"))
-        self.assertTrue(any(c == "Route: route_request → refuse_advice" for c in texts(at, "caption")))
+        self.assertEqual(at.session_state["wf_state"]["trace"], ["route_request", "refuse_advice"])  # not displayed
+        self.assert_no_route_or_question(at)
 
     def test_workflow_market_answer_matches_the_cli_wiring(self):
         question = "What is the current market stress level?"
@@ -231,10 +258,45 @@ class TestInteractions(AppCase):
         tools, _ = make_tools(SETTINGS, use_llm=False)
         expected = build_graph(tools).invoke({"question": question})
         self.assertTrue(expected["answer"].endswith(f"\n\n{DISCLAIMER}"))  # the CLI answer keeps it
-        self.assertIn(expected["answer"].removesuffix(f"\n\n{DISCLAIMER}"), texts(at, "markdown"))
+        self.assertTrue(expected["citations"])
+        shown = ui.hide_citations(expected["answer"].removesuffix(f"\n\n{DISCLAIMER}"), expected["citations"])
+        self.assertIn(shown, texts(at, "markdown"))
         self.assertNotIn(DISCLAIMER, shown_text(at))
-        self.assertNotIn(DISCLAIMER, at.session_state["wf_state"]["answer"])  # nor the "Full workflow state" view
-        self.assertTrue(any(c.endswith("retrieve_context → compose_answer") for c in texts(at, "caption")))
+        self.assertNotIn(DISCLAIMER, at.session_state["wf_state"]["answer"])
+        self.assertEqual(at.session_state["wf_state"]["citations"], expected["citations"])  # kept, not shown
+        self.assert_no_sources_shown(at, expected["citations"])
+        self.assertEqual(at.session_state["wf_state"]["trace"], expected["trace"])  # kept internally, not displayed
+        self.assertTrue(any(c.startswith("Method: ") for c in texts(at, "caption")))
+
+    def test_workflow_distress_answer_keeps_its_figures_and_intervals(self):
+        at = self.ask("research_workflow", "wf_text", "How well do the bankruptcy models perform?")
+        self.assertFalse(at.exception)
+        state = at.session_state["wf_state"]
+        shown = "\n".join(texts(at, "markdown"))
+        intervals = re.findall(r"\[\d\.\d{3}, \d\.\d{3}\]", state["answer"])
+        self.assertTrue(intervals)  # e.g. average precision 0.487 [0.380, 0.600]
+        for interval in intervals:
+            self.assertIn(interval, shown)
+        self.assert_no_sources_shown(at, state["citations"])
+
+
+class TestHideCitations(unittest.TestCase):
+    """The pages' answer text: citation markers removed, everything else kept."""
+
+    CITED = [{"marker": 1}, {"marker": 2}]
+
+    def test_markers_of_the_citations_are_removed(self):
+        self.assertEqual(ui.hide_citations("Leverage is debt over equity [1]. Banks hold cash [2][1].", self.CITED),
+                         "Leverage is debt over equity. Banks hold cash.")
+        self.assertEqual(ui.hide_citations("A rule. [2] Then a step. [1]", self.CITED), "A rule. Then a step.")
+
+    def test_other_content_is_unchanged(self):
+        text = ("Average precision 0.487 [0.380, 0.600] at 5% on 2015-01-02; see note [7].\n"
+                "- `y_t = 1` if DD_t <= -0.05 [1]")
+        self.assertEqual(ui.hide_citations(text, self.CITED),
+                         "Average precision 0.487 [0.380, 0.600] at 5% on 2015-01-02; see note [7].\n"
+                         "- `y_t = 1` if DD_t <= -0.05")
+        self.assertEqual(ui.hide_citations("Uncited [1] stays.", []), "Uncited [1] stays.")
 
 
 if __name__ == "__main__":

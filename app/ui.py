@@ -13,6 +13,7 @@ underscore, so the fingerprint argument is called `key`.)
 """
 
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -240,8 +241,16 @@ def show_index_problem(status: dict) -> None:
     st.caption("The dashboard never rebuilds the index itself.")
 
 
-def show_citations(citations: list) -> None:
-    if citations:
-        st.markdown("**Sources**")
-        st.markdown("\n".join(f"- [{c['marker']}] `{c['source']}`, {c['section']}"
-                              + (f" (relevance {c['score']:.3f})" if "score" in c else "") for c in citations))
+CITATION_MARKER = re.compile(r"[ \t]*\[(\d+)\]")
+
+
+def hide_citations(answer: str, citations: list) -> str:
+    """The answer as the pages show it: without the citation markers of `citations`.
+
+    Only markers whose number is one of the answer's citations are removed, so
+    other bracketed content (intervals such as [0.380, 0.600], an uncited [2])
+    stays. The answer and its citations are unchanged in the result: the
+    grounding check has already run on the cited text.
+    """
+    markers = {c["marker"] for c in citations}
+    return CITATION_MARKER.sub(lambda m: "" if int(m.group(1)) in markers else m.group(0), answer) if markers else answer

@@ -39,20 +39,15 @@ if asked and question.strip():
 state = st.session_state.get("wf_state")
 if state is not None:
     st.subheader("Answer")
-    st.caption(f"Question: {state['question']}")
     if state["answer"] == REFUSAL:
         st.info(state["answer"], icon=":material/block:")
     elif state.get("trace", [])[-1:] == ["report_error"]:
         st.error(state["answer"], icon=":material/error:")
     elif state.get("trace", [])[-1:] == ["abstain"]:
         st.info(state["answer"], icon=":material/search_off:")
-    else:
-        st.markdown(state["answer"])
-    ui.show_citations(state.get("citations", []))
+    else:  # citations stay in the state; the page shows plain text
+        st.markdown(ui.hide_citations(state["answer"], state.get("citations", [])))
     if state.get("method"):
         st.caption(f"Method: {state['method']['text']}")
-    st.caption("Route: " + " → ".join(state.get("trace", [])))
     for warning in state.get("warnings", []):
         st.warning(warning, icon=":material/warning:")
-    with st.expander("Full workflow state"):
-        st.json(state, expanded=False)

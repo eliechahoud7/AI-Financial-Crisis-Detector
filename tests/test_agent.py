@@ -222,7 +222,7 @@ class TestAnswerMethod(unittest.TestCase):
         by_threshold = {**by_model, "method": "none", "generation": None, "top_score": 0.21, "min_relevance": 0.3}
         method = self.method(self.DOC, by_threshold)
         self.assertEqual((method["kind"], method["text"]),
-                         ("abstained", "abstained: no passage reached the relevance threshold (best 0.210, needs 0.30)"))
+                         ("abstained", "abstained: no passage reached the relevance threshold"))  # no scores shown
 
     def test_market_and_distress_context_is_always_extractive(self):
         for question in ("What is the current market stress level?", "How well do the bankruptcy models perform?"):

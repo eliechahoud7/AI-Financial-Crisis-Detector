@@ -169,8 +169,8 @@ not shown. The optional "local AI model" toggles need Ollama running with
 **RAG from the command line:**
 
 ```powershell
-.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?"
-.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?" --llm ollama
+.\.venv\Scripts\python.exe -B scripts\ask_rag.py "What is the VIX alignment rule?"
+.\.venv\Scripts\python.exe -B scripts\ask_rag.py "What is the VIX alignment rule?" --llm ollama
 .\.venv\Scripts\python.exe -B scripts\evaluate_rag.py
 ```
 

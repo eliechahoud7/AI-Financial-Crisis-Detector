@@ -139,9 +139,9 @@
       }
     }
   },
-  "recorded_at_utc": "2026-10-26T00:30:24+00:00",
-  "git_commit": "e15c7a5",
-  "index_built_at_utc": "2026-10-26T00:28:24+00:00",
+  "recorded_at_utc": "2026-10-26T09:53:33+00:00",
+  "git_commit": "05e9f03",
+  "index_built_at_utc": "2026-10-26T09:39:06+00:00",
   "index_chunks": 333,
   "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
   "eval_set": "knowledge_base/eval/retrieval_questions.json",
@@ -281,10 +281,10 @@
     },
     "rerank": {
       "summary": {
-        "hit@1": 0.423077,
+        "hit@1": 0.461538,
         "hit@3": 0.653846,
         "hit@5": 0.846154,
-        "mrr": 0.563462,
+        "mrr": 0.582692,
         "answered_when_answerable": 1.0,
         "abstained_when_unanswerable": 0.5
       },
@@ -293,7 +293,7 @@
         "q02": 4,
         "q03": 1,
         "q04": 1,
-        "q05": 2,
+        "q05": 1,
         "q06": 4,
         "q07": null,
         "q08": 1,

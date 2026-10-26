@@ -271,6 +271,46 @@ class TestAnswer(unittest.TestCase):
         self.assertIn("numbers", ans.check_grounding("Leverage was 0.52 in 2014 [1].", evidence, 0.6)[0])
         self.assertIn("content words", ans.check_grounding("Banks hold cash buffers [1].", evidence, 0.6)[0])
         self.assertEqual(ans.check_grounding("", evidence, 0.6), ["empty answer"])
+        self.assertEqual(ans.check_grounding("1. Leverage is debt divided by equity [1].\n2. Banks hold cash buffers [2].",
+                                             evidence, 0.6), [])  # list markers are not sentences
+
+    def test_repair_citations_fixes_only_citation_slips(self):
+        """D37: inherit the next citation on the line, or re-cite to the passage that supports the sentence."""
+        evidence = {1: "Leverage is debt divided by equity, 0.4871 in 2014.",
+                    2: "Banks hold cash buffers so they can meet withdrawals during stress."}
+        text, notes = ans.repair_citations("Banks hold cash buffers. They meet withdrawals during stress [2].", evidence, 0.6)
+        self.assertEqual(text, "Banks hold cash buffers [2]. They meet withdrawals during stress [2].")
+        self.assertEqual(len(notes), 1)
+        text, notes = ans.repair_citations("Banks hold cash buffers to meet withdrawals during stress [1].", evidence, 0.6)
+        self.assertEqual(text, "Banks hold cash buffers to meet withdrawals during stress [2].")
+        self.assertEqual(ans.check_grounding(text, evidence, 0.6), [])
+        text, _ = ans.repair_citations("1. Leverage is debt divided by equity [1].\n2. Banks hold cash buffers in stress [1].",
+                                       evidence, 0.6)
+        self.assertEqual(text, "1. Leverage is debt divided by equity [1].\n2. Banks hold cash buffers in stress [2].")
+        unchanged = (
+            "Leverage is debt [1]. Banks hold cash.",                      # nothing cited after the uncited sentence
+            "- Banks hold cash buffers.\n- Leverage is debt divided by equity [1].",  # no inheritance across lines
+            "Banks hold cash buffers to meet withdrawals.",                # no citations at all
+            "Banks hold cash buffers to meet withdrawals [1]. Leverage is debt divided by equity [9].",  # unretrieved
+            "Quantum chromodynamics governs gluons strongly [1].",         # no passage supports it
+            "Leverage rose 37% in 2019 [1].",                              # invented numbers
+            "Buffers were 0.4871 [2].",                                    # too few claim words to move on a number alone
+        )
+        for answer_text in unchanged:
+            with self.subTest(answer=answer_text):
+                self.assertEqual(ans.repair_citations(answer_text, evidence, 0.6), (answer_text, []))
+                self.assertTrue(ans.check_grounding(answer_text, evidence, 0.6))
+
+    def test_repaired_answer_is_accepted_and_the_repair_recorded(self):
+        info = {"model": "fake"}
+        slipped = lambda q, ev_: ("Leverage measures debt. Leverage measures debt relative to equity "
+                                  f"[{ev_[0]['rank']}].", info)
+        result = ans.answer("leverage debt equity", self.store, self.emb, 3, 0.1, 2, generator=slipped)
+        self.assertEqual(result["method"], "generative")
+        self.assertTrue(result["generation"]["citation_repairs"])
+        self.assertNotEqual(result["answer"], result["generation"]["raw_answer"])
+        self.assertEqual(ans.check_grounding(result["answer"], {e["rank"]: e["text"] for e in result["evidence"]}, 0.6,
+                                             "leverage debt equity"), [])
 
     def test_ollama_generator_and_status_use_injected_transport(self):
         calls = []

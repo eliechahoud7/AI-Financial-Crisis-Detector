@@ -1,7 +1,7 @@
 {
-  "recorded_at_utc": "2026-10-26T00:30:24+00:00",
-  "git_commit": "e15c7a5",
-  "index_built_at_utc": "2026-10-26T00:28:24+00:00",
+  "recorded_at_utc": "2026-10-26T09:53:33+00:00",
+  "git_commit": "05e9f03",
+  "index_built_at_utc": "2026-10-26T09:39:06+00:00",
   "index_chunks": 333,
   "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
   "eval_set": "knowledge_base/eval/retrieval_questions.json",
@@ -10,10 +10,10 @@
       "Which VIX value is used for date t?": {
         "status": "answered",
         "method": "extractive",
-        "answer": "Rule: for every S&P 500 trading date *t*, the VIX feature value is the VIX close from the immediately preceding date in the S&P 500 trading calendar, not the previous row of the VIX dataset. [2] Align VIX to the S&P 500 calendar: keep VIX closes only on S&P 500 trading dates, so a VIX row on a date when the S&P 500 is closed (for example 2026-05-25 and 2026-09-07 in the 2026-10-24 snapshot) is ignored. [2] Then shift by one S&P 500 session: the value for date *t* is the aligned VIX close on the S&P 500 trading date immediately before *t*. [2]",
+        "answer": "Rule: for every S&P 500 trading date *t*, the VIX feature value is the VIX close from the immediately preceding date in the S&P 500 trading calendar, not the previous row of the VIX dataset. [1] Align VIX to the S&P 500 calendar: keep VIX closes only on S&P 500 trading dates, so a VIX row on a date when the S&P 500 is closed (for example 2026-05-25 and 2026-09-07 in the 2026-10-24 snapshot) is ignored. [1] Then shift by one S&P 500 session: the value for date *t* is the aligned VIX close on the S&P 500 trading date immediately before *t*. [1]",
         "citations": [
           {
-            "marker": 2,
+            "marker": 1,
             "source": "docs/decisions.md",
             "section": "Design Decisions > D11. VIX alignment rule: previous S&P 500 trading day (Milestone 5, Phase B)",
             "chunk_id": "docs/decisions.md#19"
@@ -107,10 +107,10 @@
           "retrieve_context",
           "compose_answer"
         ],
-        "answer": "Rule: for every S&P 500 trading date *t*, the VIX feature value is the VIX close from the immediately preceding date in the S&P 500 trading calendar, not the previous row of the VIX dataset. [2] Align VIX to the S&P 500 calendar: keep VIX closes only on S&P 500 trading dates, so a VIX row on a date when the S&P 500 is closed (for example 2026-05-25 and 2026-09-07 in the 2026-10-24 snapshot) is ignored. [2] Then shift by one S&P 500 session: the value for date *t* is the aligned VIX close on the S&P 500 trading date immediately before *t*. [2]\n\nResearch output only; not a forecast or financial advice. Results describe 1990-2026 history and carry the limitations documented in docs/decisions.md and docs/model_card.md.",
+        "answer": "Rule: for every S&P 500 trading date *t*, the VIX feature value is the VIX close from the immediately preceding date in the S&P 500 trading calendar, not the previous row of the VIX dataset. [1] Align VIX to the S&P 500 calendar: keep VIX closes only on S&P 500 trading dates, so a VIX row on a date when the S&P 500 is closed (for example 2026-05-25 and 2026-09-07 in the 2026-10-24 snapshot) is ignored. [1] Then shift by one S&P 500 session: the value for date *t* is the aligned VIX close on the S&P 500 trading date immediately before *t*. [1]\n\nResearch output only; not a forecast or financial advice. Results describe 1990-2026 history and carry the limitations documented in docs/decisions.md and docs/model_card.md.",
         "citations": [
           {
-            "marker": 2,
+            "marker": 1,
             "source": "docs/decisions.md",
             "section": "Design Decisions > D11. VIX alignment rule: previous S&P 500 trading day (Milestone 5, Phase B)"
           }

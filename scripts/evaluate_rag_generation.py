@@ -49,7 +49,8 @@ def evaluate(questions, store, embeddings, settings, generator, retriever=None) 
         cited = [e for e in r["evidence"] if e["rank"] in {c["marker"] for c in r["citations"]}]
         row = {"id": q["id"], "question": q["question"], "answerable": answerable, "outcome": outcome(r),
                "top_score": r["top_score"], "seconds": g.get("seconds"), "raw_answer": g.get("raw_answer"),
-               "grounding_problems": g.get("grounding_problems"), "final_answer": r["answer"],
+               "grounding_problems": g.get("grounding_problems"), "citation_repairs": g.get("citation_repairs"),
+               "final_answer": r["answer"],
                "cites_relevant": (any(ev.is_relevant(e, q["relevant"]) for e in cited)
                                   if answerable and r["method"] == "generative" else None),
                "citations": [f"{c['source']} - {c['section']}" for c in r["citations"]], "warnings": r["warnings"]}
@@ -69,6 +70,7 @@ def summarize(rows: list[dict]) -> dict:
         "answerable": len(answerable), "unanswerable": len(unanswerable),
         "answerable_outcomes": {o: share(answerable, "outcome", o) for o in
                                 ("accepted", "rejected", "abstained_model", "abstained_threshold", "generator_error")},
+        "accepted_with_citation_repairs": round(sum(bool(r.get("citation_repairs")) for r in accepted) / len(accepted), 4) if accepted else None,
         "accepted_citing_a_relevant_passage": round(sum(bool(r["cites_relevant"]) for r in accepted) / len(accepted), 4) if accepted else None,
         "unanswerable_outcomes": {o: share(unanswerable, "outcome", o) for o in
                                   ("abstained_threshold", "abstained_model", "accepted", "rejected", "generator_error")},
@@ -94,6 +96,8 @@ def report_text(meta: dict) -> str:
         "| Outcome | Share |", "|---|---|",
         *[f"| {k.replace('_', ' ')} | {pct(v)} |" for k, v in s["answerable_outcomes"].items()], "",
         f"Accepted answers citing at least one expected relevant passage: {pct(s['accepted_citing_a_relevant_passage'])}", "",
+        f"Accepted answers whose citation markers were repaired before the check (D37): "
+        f"{pct(s.get('accepted_with_citation_repairs'))}", "",
         f"## Unanswerable questions ({s['unanswerable']})", "",
         "| Outcome | Share |", "|---|---|",
         *[f"| {k.replace('_', ' ')} | {pct(v)} |" for k, v in s["unanswerable_outcomes"].items()], "",
@@ -107,7 +111,8 @@ def report_text(meta: dict) -> str:
         *[f"| {r['id']} | {(r['raw_answer'] or '').replace('|', '/')[:200]} | {(r['grounding_problems'] or [''])[0][:120]} |" for r in rejected], "",
         "## Limitations", "",
         "- 32 developer-written questions about this project's own documents; shares carry wide uncertainty.",
-        "- Deterministic decoding (temperature 0, fixed seed) on one machine; other hardware or Ollama versions may differ.",
+        "- Temperature 0 and a fixed seed, yet repeated runs on one machine do not always give identical answers "
+        "(D37); other hardware or Ollama versions may differ.",
         "- The model is Qwen2.5-3B (Qwen Research License, non-commercial use only).", "",
     ])
 

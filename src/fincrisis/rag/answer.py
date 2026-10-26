@@ -9,7 +9,10 @@ Generative (D15): a local Ollama model writes the answer from the same
 evidence, with deterministic settings. The answer is accepted only if every
 sentence cites retrieved evidence and its numbers and most of its words occur
 in the cited passages; otherwise the extractive answer is returned with a
-warning. If the model says the evidence is insufficient, so does the result.
+warning. Before that check, two citation slips are corrected (D37): an
+uncited sentence followed by a cited one, and a sentence citing a passage
+that does not support it when another retrieved passage does. If the model
+says the evidence is insufficient, so does the result.
 """
 
 import json
@@ -218,7 +221,10 @@ def answer(question: str, store, embeddings, top_k: int, min_relevance: float, m
             if is_abstention(generated):
                 return {**result, "status": "insufficient_evidence", "method": "generative",
                         "answer": INSUFFICIENT, "citations": []}
-            problems = check_grounding(generated, {e["rank"]: e["text"] for e in usable}, min_support, question)
+            passages = {e["rank"]: e["text"] for e in usable}
+            generated, repairs = repair_citations(generated, passages, min_support, question)
+            problems = check_grounding(generated, passages, min_support, question)
+            result["generation"]["citation_repairs"] = repairs
             result["generation"]["grounding_problems"] = problems
             if problems:
                 result["warnings"].append(f"generated answer rejected ({problems[0]}); extractive answer returned")
@@ -271,9 +277,13 @@ def is_abstention(text: str) -> bool:
 
 
 def _cited_sentences(text: str) -> list[str]:
-    """Sentences, with citation-only fragments such as "[2]." attached to the preceding sentence."""
+    """Sentences, with citation-only fragments such as "[2]." attached to the preceding sentence.
+
+    A list marker ("1.", "-") at the start of a line is not a sentence and is dropped.
+    """
     merged = []
-    for part in (p.strip() for p in re.split(r"(?<=[.!?])\s+|\n+", text)):
+    lines = (LIST_ITEM.sub("", line) for line in text.split("\n"))
+    for part in (p.strip() for line in lines for p in re.split(r"(?<=[.!?])\s+", line)):
         if not part:
             continue
         if merged and not CITATION.sub("", part).strip(" .;,"):
@@ -312,16 +322,92 @@ def check_grounding(text: str, evidence: dict[int, str], min_support: float, que
         if not cited:
             problems.append(f"uncited sentence: {body[:80]!r}")
             continue
-        source = " ".join(evidence[n] for n in cited).lower()
-        missing = [x for x in NUMBER.findall(body) if x.replace(",", "") not in source.replace(",", "")]
-        if missing:
-            problems.append(f"numbers {missing} not in cited evidence: {body[:80]!r}")
-        words = [w for w in _words(body) if _stem(w) not in question_words]
-        if len(words) >= MIN_CLAIM_WORDS:
-            support = sum(_stem(w) in source for w in words) / len(words)
-            if support < min_support:
-                problems.append(f"only {support:.0%} of content words found in cited evidence: {body[:80]!r}")
+        problems += _sentence_problems(body, " ".join(evidence[n] for n in cited), min_support, question_words)
     return problems
+
+
+def _support(words: list[str], source: str) -> float:
+    return sum(_stem(w) in source for w in words) / len(words)
+
+
+def _sentence_problems(body: str, source: str, min_support: float, question_words: set[str]) -> list[str]:
+    """The number and word-share checks of `check_grounding` for one sentence against `source`."""
+    source = source.lower()
+    problems = []
+    missing = [x for x in NUMBER.findall(body) if x.replace(",", "") not in source.replace(",", "")]
+    if missing:
+        problems.append(f"numbers {missing} not in cited evidence: {body[:80]!r}")
+    words = [w for w in _words(body) if _stem(w) not in question_words]
+    if len(words) >= MIN_CLAIM_WORDS:
+        support = _support(words, source)
+        if support < min_support:
+            problems.append(f"only {support:.0%} of content words found in cited evidence: {body[:80]!r}")
+    return problems
+
+
+def _with_markers(sentence: str, ranks: list[int]) -> str:
+    """The sentence with its citation markers replaced by `ranks`, placed before the final punctuation."""
+    body = re.sub(r"\s{2,}", " ", CITATION.sub("", sentence)).strip()
+    markers = "".join(f"[{n}]" for n in ranks)
+    end = re.search(r"\s*[.!?]+$", body)
+    return f"{body[:end.start()]} {markers}{end.group().strip()}" if end else f"{body} {markers}"
+
+
+def repair_citations(text: str, evidence: dict[int, str], min_support: float,
+                     question: str = "") -> tuple[str, list[str]]:
+    """The answer with two citation slips of a small model corrected, and a note for each correction (D37).
+
+    - A sentence without a citation takes the citations of the next cited
+      sentence on the same line: the model often cites only the last
+      sentence of a paragraph.
+    - A cited sentence that fails the number or word-share check against its
+      cited passages is re-cited to the retrieved passage that passes both
+      checks with the highest word share (the lowest rank on a tie): the
+      model sometimes cites a neighbouring passage. Only a sentence with at
+      least MIN_CLAIM_WORDS claim words is re-cited: a shorter one would
+      move on its numbers alone, which may mean something else elsewhere.
+
+    Only citation markers change, never the words. `check_grounding` then
+    checks the result as before, so a sentence that no retrieved passage
+    supports is still rejected. An answer with no citations, or citing a
+    passage that was not retrieved, is returned unchanged: the model did not
+    follow the citation format at all, and it is rejected.
+    """
+    all_cited = {int(n) for n in CITATION.findall(text)}
+    if not all_cited or not all_cited <= set(evidence):
+        return text, []
+    question_words = {_stem(w) for w in _words(question)}
+    lines, notes = [], []
+    for line in text.split("\n"):
+        prefix = LIST_ITEM.match(line)
+        prefix = prefix.group() if prefix else ""
+        parts = _cited_sentences(line[len(prefix):])
+        cites = [list(dict.fromkeys(int(n) for n in CITATION.findall(p))) for p in parts]
+        changed = set()
+        for i, part in enumerate(parts):
+            body = CITATION.sub("", part).strip()
+            if not body.strip(" .;,"):
+                continue
+            if not cites[i]:
+                following = next((c for c in cites[i + 1:] if c), None)
+                if following is None:
+                    continue  # left uncited, so check_grounding rejects it
+                cites[i] = following
+                changed.add(i)
+                notes.append(f"uncited sentence takes the next citation {following}: {body[:60]!r}")
+            words = [w for w in _words(body) if _stem(w) not in question_words]
+            if len(words) >= MIN_CLAIM_WORDS and _sentence_problems(
+                    body, " ".join(evidence[n] for n in cites[i]), min_support, question_words):
+                passing = [n for n in sorted(evidence)
+                           if not _sentence_problems(body, evidence[n], min_support, question_words)]
+                if passing:
+                    best = max(passing, key=lambda n: (_support(words, evidence[n].lower()), -n))
+                    notes.append(f"re-cited from {cites[i]} to [{best}]: {body[:60]!r}")
+                    cites[i] = [best]
+                    changed.add(i)
+        lines.append(prefix + " ".join(_with_markers(p, cites[i]) if i in changed else p for i, p in enumerate(parts))
+                     if changed else line)
+    return "\n".join(lines), notes
 
 
 def ollama_status(url: str, model: str, timeout: float = 5.0, get=None) -> dict:
@@ -344,12 +430,12 @@ PROMPT = """You answer questions about a financial-analysis project using only n
 
 Example of the required format (a different topic):
 Evidence:
-[1] (notes.md - Liquidity)
-Banks hold cash buffers so they can meet withdrawals during stress.
-[2] (notes.md - Leverage)
+[1] (notes.md - Leverage)
 Leverage is debt divided by equity.
+[2] (notes.md - Liquidity)
+Banks hold cash buffers so they can meet withdrawals during stress. The buffers are reviewed every quarter.
 Question: Why do banks hold cash buffers?
-Answer: Banks hold cash buffers so they can meet withdrawals during stress [1].
+Answer: Banks hold cash buffers so they can meet withdrawals during stress [2]. The buffers are reviewed every quarter [2].
 
 Evidence:
 {context}
@@ -358,7 +444,8 @@ Question: {question}
 
 Rules:
 - Use only facts stated in the evidence above. Do not use outside knowledge.
-- End every sentence with the number of the passage that supports it, like [1] or [2][3].
+- End every sentence with the number of the passage that states it, like [1] or [2][3]. Every sentence needs its own number, not only the last one.
+- Some passages may not be relevant to the question; ignore them.
 - Copy numbers, dates, and names exactly as written in the evidence.
 - Answer in at most {max_sentences} short sentences.
 - If the evidence does not answer the question, reply with exactly this sentence and nothing else:

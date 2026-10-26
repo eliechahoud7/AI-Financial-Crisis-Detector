@@ -1808,3 +1808,63 @@ if the decision changes.
   where the development labels expect another source. The baselines (D25)
   were re-recorded after review. Excluding the README from the index was
   considered and rejected.
+
+---
+
+## D37. Citation slips corrected before the grounding check; README example reworded
+
+- **Date:** 2026-10-26. **Status:** accepted by the project owner.
+- **Problem:** with the local model on, correct generated answers were often
+  replaced by the extractive answer. The prompt and `check_grounding` were
+  unchanged since D16. The causes were:
+  - the model cited only the last sentence of a paragraph, so the others
+    failed as uncited;
+  - it cited a neighbouring passage instead of the one stating the claim,
+    which is more likely now that reranked evidence (D31) puts related
+    passages side by side;
+  - numbered-list markers ("1.") were read as uncited sentences.
+- **Decision (`src/fincrisis/rag/answer.py`):**
+  - `repair_citations` runs before `check_grounding` and changes citation
+    markers only, never words:
+    - an uncited sentence takes the next citation on its line;
+    - a sentence that fails the number or word-share check against its
+      cited passages is re-cited to the retrieved passage that passes both,
+      with the highest word share;
+    - a sentence with fewer than `MIN_CLAIM_WORDS` claim words is not
+      re-cited, since it would move on its numbers alone (q13 showed a
+      number occurring in a passage with a different meaning);
+    - an answer with no citations, or citing an unretrieved passage, is not
+      repaired and is still rejected.
+  - Every repair is recorded in `generation.citation_repairs`; the model's
+    answer stays in `generation.raw_answer`. The generation report counts
+    accepted answers that needed a repair.
+  - A list marker at the start of a line is not a sentence.
+  - The prompt example has two sentences, each cited, from passage [2]. The
+    rules say every sentence needs its own number and irrelevant passages
+    are ignored.
+- **Unchanged:** `min_support` (0.6), the number check, `MIN_CLAIM_WORDS`,
+  the abstention rules, retrieval and the reranker.
+- **Results (development set only; the validation set was not used):**
+  accepted generated answers rose from 62% to 73% of answerable questions
+  (46% before D30-D33). q04, q17, q19 and q25 gained. q13 and q14 are
+  rejected for numbers not in the evidence, and q15 for an uncited final
+  sentence. Unanswerable questions: all abstained, unchanged.
+- **README example (follows D36):** the `ask_rag.py` command example in the
+  README quoted a question close to the dashboard's placeholder question.
+  The reranker ranked that README passage first, and the model then
+  abstained, although the D11 passages answer it. The example now asks for
+  the D11 rule by name; the workflow examples that D25 uses as reference
+  questions are unchanged.
+  - **Effect:** D11 ranks first for the placeholder question, and the model
+    gives a cited answer. q05 returns to rank 1 in rerank mode: hit@1 0.423
+    to 0.462 and MRR 0.563 to 0.583; other metrics are unchanged.
+  - **Baselines (D25):** re-recorded after review. Two reference answers
+    changed only in a citation number (D11 now [1], was [2]).
+- **Caution:**
+  - Ollama answers differ between runs even at temperature 0: 27 of 32
+    were identical in one repeat, so a difference of a few questions is
+    noise.
+  - The checks stay lexical. A short sentence that restates the question
+    can keep a wrong citation, because it has too few claim words to test.
+- **Tests:** `tests/test_rag.py` covers both repairs, what is never
+  repaired, list markers, and that `answer()` records repairs.

@@ -1,108 +1,191 @@
 # AI Financial Crisis Detector
 
-A local, offline-first system that:
+A local, offline-first research system for financial risk analysis. It scores
+S&P 500 market stress, evaluates company-distress classifiers, answers
+questions about its own methodology with cited sources, and brings these
+together in a LangGraph workflow and a Streamlit dashboard.
 
-1. Predicts company financial distress (XGBoost).
-2. Forecasts S&P 500 market stress over the next 20 trading days (XGBoost).
-3. Answers questions about the project with cited, evidence-based answers (RAG + local LLM via Ollama).
-4. Connects these in a LangGraph workflow and a local Streamlit dashboard.
+Everything runs on a laptop CPU: no paid APIs, cloud services, Docker or
+fine-tuning. The design favours evaluation discipline over headline numbers.
+The project uses chronological splits with purge gaps and frozen,
+checksum-verified results, and every design decision is recorded in
+`docs/decisions.md` (D1–D35).
 
-Anomaly detection and market-regime classification were planned originally and are deferred; they are
-not part of the current roadmap.
+> **Disclaimer:** this is a research and educational project. Its outputs are
+> probabilistic estimates with known limitations, not forecasts or financial
+> advice, and they do not guarantee any financial outcome.
 
-Everything runs locally. No paid APIs, cloud services, Docker, or fine-tuning.
+## What it does
 
-> **Disclaimer:** This is a research and educational project. Its outputs are
-> probabilistic estimates with known limitations, not financial advice, and
-> they do not guarantee any financial outcome.
+- **Market stress** (D2, D10–D13): scores the risk that the S&P 500 closes
+  at least 5% below its running high within the next 20 trading days. Inputs
+  are 16 backward-looking S&P 500 and VIX features; the 1990–2026 history
+  comes from a frozen snapshot.
+- **Company distress** (D4, D8, D9): baseline classifiers on the UCI
+  Taiwanese Bankruptcy dataset, with leakage-safe preprocessing and repeated
+  stratified CV.
+- **Document RAG** (D14–D16, D30–D33): answers questions about the project's
+  documents with numbered citations, or says the evidence is insufficient.
+  It uses local embeddings, a cross-encoder reranker and an optional local
+  LLM, whose answers must pass grounding checks.
+- **Workflow** (D17): a LangGraph graph that routes each question to the
+  market signal, the distress results or the documents, and declines
+  requests for investment advice.
+- **Dashboard** (D18–D21, D29): a local Streamlit and Plotly app with five
+  pages over all of the above. It is read-only and never retrains,
+  downloads or rebuilds.
 
-## Status
+## Results
 
-- **Company distress** (UCI Taiwanese Bankruptcy dataset): download, inspection, preprocessing,
-  baselines and the one-time held-out test are done (`docs/model_card.md`). The meanings of the
-  target labels are unverified (`docs/decisions.md`, D4).
-- **Market stress** (S&P 500 and VIX, 1990–2026): frozen snapshot, dataset, walk-forward
-  validation and the one-time held-out test are done (D10–D13). The primary model is a
-  downside-volatility rule; no model clearly beat it.
-- **Document RAG**: local retrieval with cited extractive answers, optional local LLM
-  generation with grounding checks (D14–D16).
-- **Workflow**: a LangGraph workflow routes questions to the market signal, the distress
-  results, or the documents (D17).
-- **Dashboard**: a local Streamlit + Plotly dashboard over all of the above (D18–D21, D29).
+These are historical results of frozen models. Each held-out test set was
+evaluated in a single recorded run, after model selection was frozen, and
+has not been used for tuning since. The records cannot rule out an earlier
+inspection of the market-stress test set (D34).
 
-## Dashboard
+**Market stress:** held-out test 2015-01-02 to 2026-09-25 (2,950 trading
+days; base rate 0.212). The models were selected on 15 walk-forward
+validation years (2000–2014).
 
-Five pages: Market Dashboard, Market Stress Analysis, Company Distress, Financial RAG Assistant
-and AI Research Workflow. The dashboard only reads the frozen outputs: it never downloads data,
-trains or refits models, regenerates predictions, or rebuilds the document index. Missing or
-altered artifacts are reported with instructions instead of being shown. The Market Dashboard
-explains its four indicators in plain language, shades historical market events on its charts and
-ends with a summary generated from the snapshot.
+| Model | Average precision | ROC-AUC |
+|---|---|---|
+| Rule: 20-day downside volatility (primary) | 0.363 | 0.677 |
+| Rule: VIX 252-day percentile | 0.357 | 0.686 |
+| XGBoost | 0.354 | 0.673 |
+| Logistic regression | 0.321 | 0.627 |
+| Dummy (base rate) | 0.212 | 0.500 |
 
-The pages do not show the snapshot's as-of date, a warning when it is old, the research-only
-disclaimer or the limitations of each component (D29). Those are documented in
-`docs/model_card.md` and `docs/decisions.md`, and the workflow CLI still states its disclaimer
-and warns about an old snapshot.
+All models beat the base rate. No fitted model clearly beat the simple
+downside-volatility rule, and the signal is weak, with many false alarms.
+Methodological questions recorded in the Phase B audit (D34) remain open,
+and decision thresholds are treated as valid for the rule baselines only
+(D35).
 
-```powershell
-# One-time: install the dashboard, RAG and workflow dependencies (CPU-only PyTorch)
-.\.venv\Scripts\python.exe -m pip install -e ".[rag,agent,app]" --extra-index-url https://download.pytorch.org/whl/cpu
-# One-time: build the document index (needed by the RAG and workflow pages)
-.\.venv\Scripts\python.exe -B scripts\build_rag_index.py --allow-download
+**Company distress:** held-out test of 1,364 companies, 44 with label 1.
 
-# Launch from the project root, so .streamlit/config.toml is used
-.\.venv\Scripts\python.exe -m streamlit run app\streamlit_app.py
-```
+| Model | Average precision | ROC-AUC |
+|---|---|---|
+| XGBoost (large values as missing) | 0.487 | 0.958 |
+| Logistic regression (quantile transform) | 0.472 | 0.940 |
+| Dummy | 0.032 | 0.500 |
 
-Then open http://localhost:8501. `.streamlit/config.toml` binds the server to `localhost` only and
-turns off Streamlit's usage statistics. The pages need the frozen outputs under `data/` and
-`artifacts/` (not in Git; see `docs/model_card.md`, section 12, and D10–D13). The optional
-"local model" toggles need Ollama running with `qwen2.5:3b` (non-commercial licence). After editing
-any indexed document (`README.md`, `docs/`, reports), rebuild the index with
-`scripts\build_rag_index.py --force`; the dashboard shows when it is out of date.
+The test set does not distinguish the two models. UCI does not document what
+the target labels mean, so these are classification results, not confirmed
+bankruptcy predictions (`docs/model_card.md`).
 
-## Asking the workflow
+**Document RAG retrieval:** development set only (26 answerable and 6
+unanswerable questions): hit@1 0.462, hit@3 0.731, hit@5 0.846, MRR 0.596.
+These numbers come from questions used to develop the system, so they are
+optimistic. A new held-out question set is needed to confirm them.
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[rag,agent]" --extra-index-url https://download.pytorch.org/whl/cpu
-.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "What is the current market stress level?"
-.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "How well do the bankruptcy models perform?"
-.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "Which VIX value is used for date t?"
-```
+## How it works
 
-The documents must be indexed first (`scripts\build_rag_index.py`, see the RAG section below).
-The market answer reads the local snapshot, so refresh it for a current signal; the answer warns
-when the snapshot is more than 7 days old.
+- **No look-ahead.**
+  - Features for day *t* use closes up to *t*; the VIX is lagged one
+    session.
+  - Labels use only the next 20 sessions.
+  - Training ends 20 sessions before each validation year and before the
+    test period.
+  - Tests check each of these rules (`tests/test_market_*.py`).
+- **Frozen evidence.** Raw data, datasets, predictions, models and
+  evaluation sets are checked against recorded SHA-256 checksums. The code
+  must reproduce the frozen features and scores exactly (D22, D23).
+- **Grounded answers.**
+  - Extractive answers quote retrieved sentences with citations.
+  - Generated answers are kept only if every sentence cites retrieved
+    evidence, and its numbers and most of its words appear there.
+  - A question is refused when no passage reaches a fixed relevance
+    threshold.
+- **Local only.** The dashboard binds to `localhost`, with usage
+  statistics off. Models are loaded from the local cache, and downloads
+  need an explicit flag.
 
-Requests for investment or trading advice (such as "Should I sell my stocks now?") are declined.
-Market and distress answers come from the frozen evaluated models and are explained with cited
-project documents; every answer states that it is research output, not a forecast or financial
-advice. Add `--json` to see the route taken and `--llm ollama` to let the local model write
-document answers.
+See `docs/architecture.md` for the component diagram and `docs/model_card.md`
+for the company-distress model card.
 
-## Setup
+## Tech stack
 
-Requires Python 3.12 (Windows `py` launcher shown).
+- **Language:** Python 3.12.
+- **Models:** scikit-learn, XGBoost, pandas, NumPy.
+- **Retrieval:** sentence-transformers (`all-MiniLM-L6-v2` embeddings and the
+  `ms-marco-MiniLM-L-6-v2` cross-encoder), FAISS, LangChain document
+  interfaces.
+- **Workflow:** LangGraph.
+- **Local LLM:** Ollama with `qwen2.5:3b` (optional; non-commercial licence).
+- **App:** Streamlit and Plotly.
+- **Data:** yfinance (an unofficial Yahoo Finance client).
+
+## Quick start (Windows)
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt --extra-index-url https://download.pytorch.org/whl/cpu
 .\.venv\Scripts\python.exe -m pip install -e . --no-deps
-.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
 ```
 
-Set `FINCRISIS_LIVE_OLLAMA=1` to include the test against the local Ollama model
-(it needs Ollama running with `qwen2.5:3b`; other Ollama tests use a stand-in server), and
-`FINCRISIS_LIVE_SERVER=1` to start the real dashboard server once and check it is local-only.
-Dependency ranges are declared in `pyproject.toml`, and exact versions are in
-`requirements-lock.txt`. Tests that need the downloaded dataset are skipped
-if it is absent. For the full data and model pipeline, see
-`docs/model_card.md` (section 12).
+The data, frozen results and trained models live under `data/` and
+`artifacts/` and are not committed. To regenerate them, follow the pipeline
+in `docs/model_card.md` (section 12) and D10–D13. Then build the document
+index once; the first run downloads the embedding and reranker models:
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts\build_rag_index.py --allow-download
+```
+
+Launch the dashboard from the project root, so `.streamlit/config.toml` is
+used, and open http://localhost:8501:
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app\streamlit_app.py
+```
+
+## Using it
+
+**Dashboard pages:**
+- Market Dashboard;
+- Market Stress Analysis;
+- Company Distress;
+- Financial RAG Assistant;
+- AI Research Workflow.
+
+Missing or altered artifacts are reported with instructions to fix them,
+not shown. The optional "local AI model" toggles need Ollama running with
+`qwen2.5:3b`.
+
+**Workflow from the command line:**
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "What is the current market stress level?"
+.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "How well do the bankruptcy models perform?"
+.\.venv\Scripts\python.exe -B scripts\run_crisis_agent.py "Which VIX value is used for date t?"
+```
+
+- **Advice:** requests for investment or trading advice are declined
+  without running any tool, for example "Should I sell my stocks now?".
+- **Snapshot age:** the market answer reads the frozen snapshot and warns
+  when it is more than 7 days old.
+- **Options:** add `--json` for the route taken, or `--llm ollama` to let the
+  local model write document answers.
+
+**RAG from the command line:**
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?"
+.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?" --llm ollama
+.\.venv\Scripts\python.exe -B scripts\evaluate_rag.py
+```
+
+**Evaluation sets:**
+- **Default:** the evaluation scripts use the development questions
+  (`knowledge_base/eval/retrieval_questions.json`).
+- **Validation set:** it has already been used, so the scripts refuse it,
+  even under another name, unless `--final-validation` is given (D24).
+- **Your own documents:** add `.md` or `.txt` files under
+  `knowledge_base/documents/`, then rebuild with
+  `scripts\build_rag_index.py --force`.
 
 ## Quality checks
 
-One command runs every read-only check and the test suite, with a pass/fail line per stage
-(D22–D28). Run it from the project root:
+One read-only command runs every check and the test suite (D22–D28):
 
 ```powershell
 .\.venv\Scripts\python.exe -B scripts\run_qa.py            # everything (about 5 minutes on CPU)
@@ -110,76 +193,51 @@ One command runs every read-only check and the test suite, with a pass/fail line
 .\.venv\Scripts\python.exe -B scripts\run_qa.py --live     # also the live Ollama and dashboard-server tests
 ```
 
-| Stage | Checks | Script |
-|---|---|---|
-| environment | installed packages match `requirements-lock.txt` | `run_qa.py` |
-| integrity | frozen data, results, models and the RAG validation set match recorded checksums | `verify_integrity.py` |
-| reproducibility | today's code reproduces the frozen features, target, model scores and latest signal | `check_reproducibility.py` |
-| rag regression | development-set retrieval does not fall below its baseline; reference answers are unchanged | `check_rag_regression.py` |
-| tests | the unit-test suite | `python -m unittest discover -s tests` |
+| Stage | Checks |
+|---|---|
+| environment | installed packages match `requirements-lock.txt` |
+| integrity | frozen data, results, models and evaluation sets match their recorded checksums |
+| reproducibility | today's code reproduces the frozen features, target, model scores and latest signal |
+| rag regression | development-set retrieval and reference answers match their reviewed baselines |
+| tests | about 360 unit and integration tests |
 
-Nothing is trained, downloaded or rebuilt. After editing an indexed document, rebuild the index,
-run `scripts\check_rag_regression.py`, review any change it reports, and only then re-record the
-baselines with `--update`.
+**After editing an indexed document** (this README, `docs/` or the reports):
+1. Rebuild the index.
+2. Run `scripts\check_rag_regression.py` and review what it reports.
+3. Only then re-record the baselines with `--update`.
 
-## Asking questions about the project documents (RAG)
+## Limitations
 
-Retrieval and answering run locally on CPU (see `docs/decisions.md`, D14).
-Answers quote the retrieved passages and cite them; if nothing relevant is
-found, the reply says the evidence is insufficient.
+- **Market stress:**
+  - the signal is weak, and the 2015–2026 test set has already been used;
+  - any new model or threshold needs data that has not been used, which in
+    practice means forward data collected after the snapshot;
+  - fitted-model thresholds are not transferable (D35);
+  - the D34 questions on aggregation and on overlapping labels are open.
+- **Company distress:**
+  - the labels are unverified;
+  - the data covers Taiwanese companies from 1999–2009 only, with no
+    company identifier;
+  - the probabilities are not calibrated.
+- **RAG:**
+  - small local models with development-set metrics only;
+  - only 3 of the 6 unanswerable development questions are refused; the
+    others get off-topic answers;
+  - some answers include an off-topic sentence;
+  - tables of numbers and the full feature list are hard to retrieve;
+  - known cases are listed in D32 and D33.
+- **Data:** Yahoo Finance data is unofficial and can be revised; the
+  snapshot is frozen with checksums.
 
-```powershell
-# One-time: install the RAG dependencies (CPU-only PyTorch)
-.\.venv\Scripts\python.exe -m pip install -e ".[rag]" --extra-index-url https://download.pytorch.org/whl/cpu
-
-# Build the index (the first run downloads the embedding and reranker models once)
-.\.venv\Scripts\python.exe -B scripts\build_rag_index.py --allow-download
-
-# Ask a question, and evaluate retrieval quality
-.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?"
-.\.venv\Scripts\python.exe -B scripts\evaluate_rag.py
-```
-
-Optional: let a local model write the answer (see `docs/decisions.md`, D15).
-This needs [Ollama](https://ollama.com) and the `qwen2.5:3b` model, which is
-licensed for non-commercial use only. Generated answers are used only if
-they pass the grounding checks; otherwise the cited extractive answer is
-shown.
-
-```powershell
-ollama pull qwen2.5:3b
-.\.venv\Scripts\python.exe -B scripts\ask_rag.py "Which VIX value is used as a feature for day t?" --llm ollama
-.\.venv\Scripts\python.exe -B scripts\evaluate_rag_generation.py
-```
-
-Retrieval uses semantic search (`rag.retrieval.mode: dense`). Hybrid
-(semantic plus TF-IDF) and lexical modes exist but are not the default: they
-improved the development questions but not the independent validation set
-(`docs/decisions.md`, D16).
-
-The evaluation scripts use the development questions
-(`knowledge_base/eval/retrieval_questions.json`) by default. `--questions`
-selects another set; the validation set
-(`knowledge_base/eval/validation_questions.json`) has already been used, so
-do not tune settings against it. The scripts refuse it (including renamed
-copies) unless `--final-validation` is given, and then only if it still matches
-its recorded checksum (D24). Write a new held-out set for any further tuning.
-
-Add your own `.md` or `.txt` documents under `knowledge_base/documents/`,
-then rebuild with `--force`. The index refuses to load if any source has
-changed since it was built.
-
-## Layout
+## Project layout
 
 | Path | Purpose |
 |---|---|
-| `config/settings.yaml` | Tickers, target definition, seeds, paths |
-| `src/fincrisis/` | All project logic (data, features, models, evaluation) |
-| `scripts/` | Command-line entry points that call `src/` |
-| `notebooks/` | Exploration and reporting only |
-| `app/` | Streamlit UI (later milestone) |
-| `tests/` | Automated checks, including leakage guards |
-| `docs/` | Architecture, design decisions, and the model card |
-| `data/`, `artifacts/` | Local data and trained models (not committed) |
-
-See `docs/architecture.md` and `docs/decisions.md` for details.
+| `config/settings.yaml` | Tickers, target definition, seeds, paths, model and RAG settings |
+| `src/fincrisis/` | Project logic: data, features, models, evaluation, RAG, agents, QA |
+| `scripts/` | Command-line entry points |
+| `app/` | Streamlit dashboard (`streamlit_app.py`, pages in `views/`) |
+| `tests/` | Automated tests, including leakage guards |
+| `docs/` | Architecture, design decisions (D1–D35) and the model card |
+| `config/qa/`, `config/frozen_artifacts.json` | Reviewed RAG baselines and frozen-artifact checksums |
+| `data/`, `artifacts/` | Local data, results and trained models (not committed) |

@@ -1777,3 +1777,34 @@ if the decision changes.
   - formal approval of Phase B and the D13 protocol;
   - how reviews between stages are recorded;
   - forward evaluation.
+
+---
+
+## D36. Portfolio README, and its effect on RAG retrieval
+
+- **Date:** 2026-10-26. **Status:** accepted by the project owner.
+- **Change:** `README.md` was rewritten for a portfolio reader. It covers
+  the components, the historical held-out results with the D34 and D35
+  caveats, the safeguards, the tech stack, a quick start, usage, the QA
+  checks and the limitations. The README examples that D25 uses as
+  reference questions are kept word for word.
+- **Effect on the RAG:** the README is indexed and now restates facts held
+  in the primary records, so its passages compete with them in retrieval.
+  - **Development set, configured rerank mode:** hit@1 fell from 0.462 to
+    0.423, hit@3 from 0.731 to 0.654 and MRR from 0.596 to 0.563. hit@5
+    (0.846) and refusals (3 of 6) are unchanged.
+  - **Moves:** q02, q05 and q26 each moved down one place, because a README
+    passage now ranks first; their answers are still correct and cite the
+    primary records. q21 entered the top five.
+  - **Known loss:** for q14, the model-card passage with the exact test
+    result left the candidates. The answer still gives the result through
+    a CV-versus-test sentence.
+  - **Format:** an earlier draft quoted a README table row as an answer, so
+    the component overview uses bullets, not a table.
+  - **Reference answers:** two changed only in a citation number (VIX
+    timing, RAG and workflow, still citing D11).
+- **Decision:** the README is a legitimate summary source and was not shaped
+  around retrieval scores. Most of the drop is the README being retrieved
+  where the development labels expect another source. The baselines (D25)
+  were re-recorded after review. Excluding the README from the index was
+  considered and rejected.

@@ -9,7 +9,7 @@ Everything runs on a laptop CPU: no paid APIs, cloud services, Docker or
 fine-tuning. The design favours evaluation discipline over headline numbers.
 The project uses chronological splits with purge gaps and frozen,
 checksum-verified results, and every design decision is recorded in
-`docs/decisions.md` (D1–D35).
+`docs/decisions.md` (D1–D37).
 
 > **Disclaimer:** this is a research and educational project. Its outputs are
 > probabilistic estimates with known limitations, not forecasts or financial
@@ -34,6 +34,17 @@ checksum-verified results, and every design decision is recorded in
 - **Dashboard** (D18–D21, D29): a local Streamlit and Plotly app with five
   pages over all of the above. It is read-only and never retrains,
   downloads or rebuilds.
+
+| Market Dashboard | Company Distress |
+|---|---|
+| ![Market Dashboard](docs/screenshots/market-stress-dashboard.png) | ![Company Distress](docs/screenshots/company-distress.png) |
+
+![Financial RAG Assistant](docs/screenshots/rag-assistant.png)
+
+## Data sources
+
+- **Market data:** [Yahoo Finance](https://finance.yahoo.com/) (D10)
+- **Company data:** [UCI Machine Learning Repository](https://archive.ics.uci.edu/) (D4)
 
 ## Results
 
@@ -73,7 +84,7 @@ the target labels mean, so these are classification results, not confirmed
 bankruptcy predictions (`docs/model_card.md`).
 
 **Document RAG retrieval:** development set only (26 answerable and 6
-unanswerable questions): hit@1 0.462, hit@3 0.731, hit@5 0.846, MRR 0.596.
+unanswerable questions): hit@1 0.462, hit@3 0.654, hit@5 0.846, MRR 0.583.
 These numbers come from questions used to develop the system, so they are
 optimistic. A new held-out question set is needed to confirm them.
 
@@ -101,6 +112,34 @@ optimistic. A new held-out question set is needed to confirm them.
 
 See `docs/architecture.md` for the component diagram and `docs/model_card.md`
 for the company-distress model card.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    YF[("Yahoo Finance<br/>^GSPC, ^VIX")] --> MS["Market-stress pipeline"]
+    UCI[("UCI dataset")] --> CD["Company-distress pipeline"]
+    DOCS[("Project documents")] --> IDX["RAG index"]
+    MS --> FROZEN[("Frozen artifacts<br/>SHA-256 checked")]
+    CD --> FROZEN
+    IDX --> FROZEN
+
+    subgraph WF["LangGraph workflow"]
+        ROUTE{"route_request"}
+        ROUTE -- "advice" --> REFUSE["refuse_advice"]
+        ROUTE -- "market" --> MARKET["assess_market"]
+        ROUTE -- "distress" --> DISTRESS["summarize_distress"]
+        ROUTE -- "documents" --> RETRIEVE["retrieve_context"]
+        MARKET --> RETRIEVE
+        DISTRESS --> RETRIEVE
+        RETRIEVE --> ANSWER["compose_answer or abstain"]
+    end
+
+    FROZEN --> ROUTE
+    LLM["Ollama, optional"] -.-> ANSWER
+    FROZEN --> APP["Streamlit dashboard"]
+    ANSWER --> APP
+```
 
 ## Tech stack
 
@@ -185,6 +224,12 @@ not shown. The optional "local AI model" toggles need Ollama running with
 
 ## Quality checks
 
+Run the unit tests alone (`unittest`, as the QA runner does):
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests
+```
+
 One read-only command runs every check and the test suite (D22–D28):
 
 ```powershell
@@ -199,7 +244,7 @@ One read-only command runs every check and the test suite (D22–D28):
 | integrity | frozen data, results, models and evaluation sets match their recorded checksums |
 | reproducibility | today's code reproduces the frozen features, target, model scores and latest signal |
 | rag regression | development-set retrieval and reference answers match their reviewed baselines |
-| tests | about 360 unit and integration tests |
+| tests | about 380 unit and integration tests |
 
 **After editing an indexed document** (this README, `docs/` or the reports):
 1. Rebuild the index.
@@ -238,6 +283,6 @@ One read-only command runs every check and the test suite (D22–D28):
 | `scripts/` | Command-line entry points |
 | `app/` | Streamlit dashboard (`streamlit_app.py`, pages in `views/`) |
 | `tests/` | Automated tests, including leakage guards |
-| `docs/` | Architecture, design decisions (D1–D35) and the model card |
+| `docs/` | Architecture, design decisions (D1–D37) and the model card |
 | `config/qa/`, `config/frozen_artifacts.json` | Reviewed RAG baselines and frozen-artifact checksums |
 | `data/`, `artifacts/` | Local data, results and trained models (not committed) |

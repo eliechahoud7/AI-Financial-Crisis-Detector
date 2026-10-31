@@ -251,6 +251,24 @@ One read-only command runs every check and the test suite (D22–D28):
 2. Run `scripts\check_rag_regression.py` and review what it reports.
 3. Only then re-record the baselines with `--update`.
 
+## Key settings
+
+All settings live in `config/settings.yaml`. They differ in what a change
+would mean for the reported results:
+
+| Setting | Value | Effect of a change |
+|---|---|---|
+| `market_stress_target` (`horizon_trading_days`, `drawdown_threshold`) | 20, 0.05 | Redefines the label (D2), so it is a different problem. The reproducibility check rebuilds the target with these values and would no longer match the frozen dataset. |
+| `evaluation.purge_gap_trading_days` | 20 | Gap between training and evaluation rows; must be at least the horizon, or labels overlap the next block. |
+| `market_stress` validation years, `test_start` | 2000–2014, 2015-01-01 | Define the walk-forward and held-out splits (D12). Results on other splits are not comparable with the reported ones. |
+| `market.end_date` | 2026-10-23 | Last date of the frozen snapshot (D10). |
+| `company_distress` (`test_size`, `cv_folds`, `cv_repeats`) and `project.random_seed` | 0.2, 5, 3, 42 | Define the held-out companies and the CV folds (D8, D9). |
+| Model hyperparameters (`logistic_regression`, `xgboost`) | fixed, not tuned | Used only when training. The frozen models are loaded from `artifacts/`, so editing them changes nothing until a retrain, which would be a new experiment. |
+| `rag` chunking, `embedding_model`, `retrieval.mode`, `rerank_candidates`, `top_k` | see file | Change what is retrieved. Rebuild the index and run `check_rag_regression.py`; the development baselines in `config/qa/` were recorded with the current values. |
+| `rag.min_relevance` | 0.30 | Below this score, the answer is "insufficient evidence"; it changes which questions are refused. |
+| `rag.ollama.options` | temperature 0, seed 42 | Deterministic decoding for the optional local LLM only; the regression checks use extractive answers. |
+| `agent.stale_after_days` | 7 | Only the age at which the stale-snapshot warning appears; no metric depends on it. |
+
 ## Limitations
 
 - **Market stress:**
@@ -273,6 +291,31 @@ One read-only command runs every check and the test suite (D22–D28):
   - known cases are listed in D32 and D33.
 - **Data:** Yahoo Finance data is unofficial and can be revised; the
   snapshot is frozen with checksums.
+
+## Future work
+
+Not implemented; each item follows from a limitation above.
+
+- Collect market data after the frozen snapshot, to test any new model or
+  threshold on data that has not been used.
+- Settle the open D34 questions on aggregation and overlapping labels.
+- Calibrate the company-distress probabilities, and find documentation of
+  what the UCI labels mean.
+- Write a new held-out RAG question set to confirm the development-set
+  retrieval metrics.
+- Improve refusals on unanswerable questions and retrieval of numeric
+  tables.
+
+## Licensing and attribution
+
+- **Code:** the repository has no `LICENSE` file, so no license is granted
+  for its code.
+- **Market data:** Yahoo Finance through yfinance, an unofficial client not
+  affiliated with Yahoo. The data is subject to Yahoo's terms and is not
+  committed to this repository.
+- **Models:** `all-MiniLM-L6-v2` and `ms-marco-MiniLM-L-6-v2` are
+  Apache-2.0. The optional `qwen2.5:3b` is under the Qwen Research License,
+  for non-commercial use only.
 
 ## Project layout
 
